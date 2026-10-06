@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TA BP Simulator: Fluid Dynamics</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
+    
+    body { 
+      font-family: 'Inter', sans-serif; 
+      background-color: #0b0f19; 
+      color: #f1f5f9; 
+      user-select: none;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      overscroll-behavior-y: none;
+    }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    button { touch-action: manipulation; }
+
+    .workspace-main {
+      display: grid !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+    }
+
+    .card-panel {
+      background-color: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+    }
+
+    .mercury-bar {
+      transition: height 0.08s ease-out;
+      background: linear-gradient(90deg, #94a3b8 0%, #e2e8f0 35%, #ffffff 65%, #64748b 100%);
+      box-shadow: 0 0 10px rgba(226, 232, 240, 0.6);
+    }
+
+    .mercury-meniscus {
+      background: radial-gradient(ellipse at center, #ffffff 0%, #cbd5e1 60%, #64748b 100%);
+      border-radius: 50% 50% 0 0;
+    }
+
+    .glass-reflection {
+      background: linear-gradient(90deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.05) 40%, rgba(0,0,0,0.3) 100%);
+    }
+
+    #artery-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      border-radius: 0.5rem;
+    }
+
+    @keyframes artery-pulse {
+      0% { transform: scale(1); }
+      25% { transform: scale(1.03); box-shadow: 0 0 15px rgba(244, 63, 94, 0.4); }
+      100% { transform: scale(1); }
+    }
+    .pulse-flow { animation: artery-pulse 0.22s ease-out; }
+  </style>
+</head>
+<body class="flex flex-col">
+
+  <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-50 px-4 py-3">
+    <div class="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-4">
+      <div class="flex items-center gap-3">
+        <div class="p-2 bg-sky-500/20 text-sky-400 rounded-xl border border-sky-500/30 text-xl">🩺</div>
+        <div>
+          <h1 class="font-extrabold text-lg text-white tracking-tight leading-tight">TA Blood Pressure Simulator</h1>
+          <p class="text-xs text-slate-400">Particle Fluid Dynamics & Auscultation Module</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="exam-btn" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-lg">
+          <span>📝</span> Clinical Assessment Exam
+        </button>
+        <button id="audio-toggle" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg border border-slate-700 transition-colors flex items-center gap-1.5">
+          <span id="audio-icon">🔇</span> <span id="audio-text">Audio Off</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div id="exam-banner" style="display: none;" class="bg-indigo-950 border-b border-indigo-700/60 p-4">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+      <div class="flex-1">
+        <div class="flex items-center gap-3 mb-1">
+          <span class="text-[10px] font-extrabold text-indigo-300 uppercase tracking-widest bg-indigo-900 px-2 py-0.5 rounded border border-indigo-700">Clinical Exam Mode</span>
+          <span id="exam-status" class="text-xs font-mono font-bold text-amber-400">Patient Target BP Hidden</span>
+        </div>
+        <div id="exam-prompt" class="text-sm font-semibold text-white">Determine the patient's blood pressure. Accepts human variance (±15 mmHg tolerance).</div>
+        <div id="exam-feedback" class="text-xs font-medium mt-1 min-h-[18px]"></div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <input type="number" id="input-sys" placeholder="Systolic" class="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-center font-mono text-white focus:border-indigo-500 outline-none">
+        <span class="text-slate-500 font-bold">/</span>
+        <input type="number" id="input-dia" placeholder="Diastolic" class="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-center font-mono text-white focus:border-indigo-500 outline-none">
+        <button id="submit-exam-btn" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded transition-colors">Submit</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="workspace-main max-w-7xl mx-auto w-full p-4 md:p-6 flex-grow grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <!-- LEFT COLUMN -->
+    <div class="lg:col-span-6 card-panel flex flex-col items-center justify-between shadow-2xl relative overflow-hidden">
+      <div class="w-full flex justify-between items-center mb-2">
+        <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest">Mercury Sphygmomanometer</h2>
+        <span id="cuff-pressure-badge" class="font-mono text-xs font-bold bg-sky-950 text-sky-400 border border-sky-800 px-2.5 py-1 rounded">Cuff: 0 mmHg</span>
+      </div>
+
+      <div class="relative w-full max-w-[280px] bg-slate-950 border-2 border-slate-700 rounded-2xl p-4 shadow-2xl flex flex-col items-center justify-center my-2">
+        <div class="w-16 h-3 bg-slate-700 rounded-t-md mb-1 border-b border-slate-600"></div>
+        <div class="relative w-full h-[360px] bg-slate-900 rounded-lg border border-slate-800 flex justify-between items-center px-4 overflow-hidden shadow-inner">
+          <div id="scale-left" class="flex flex-col justify-between h-full py-1 text-[9px] font-mono font-semibold text-slate-400 select-none text-right w-8"></div>
+          <div class="relative w-5 h-full bg-slate-950 border border-slate-700 rounded-sm flex flex-col justify-end overflow-hidden shadow-inner">
+            <div id="mercury-bar" class="w-full mercury-bar rounded-b-sm relative" style="height: 0px;">
+              <div class="absolute -top-1 left-0 right-0 h-2 mercury-meniscus"></div>
+            </div>
+            <div class="absolute inset-0 glass-reflection pointer-events-none"></div>
+          </div>
+          <div id="scale-right" class="flex flex-col justify-between h-full py-1 text-[9px] font-mono font-semibold text-slate-400 select-none text-left w-8"></div>
+        </div>
+        <div class="w-24 h-6 bg-slate-800 border border-slate-600 rounded-b-lg mt-1 flex items-center justify-center shadow-lg">
+          <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">HG LOCK</span>
+        </div>
+      </div>
+
+      <div class="w-full grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-col items-center justify-center">
+          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Inflation Bulb (Puar)</span>
+          <button id="pump-btn" class="w-full py-3 px-4 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold rounded-lg shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+            <span>🎈</span> PUMP CUFF <span class="text-[10px] opacity-80 font-mono">(+12 mmHg)</span>
+          </button>
+          <p class="text-[10px] text-slate-500 mt-1.5">Hotkey: <kbd class="px-1 py-0.5 bg-slate-800 rounded text-slate-300 font-mono">[SPACEBAR]</kbd></p>
+        </div>
+
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+          <div class="flex justify-between items-center mb-1">
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Deflation Valve</span>
+            <span id="bleed-rate-text" class="text-xs font-mono font-bold text-emerald-400">2.5 mmHg/s</span>
+          </div>
+          <input type="range" id="valve-slider" min="0" max="12" step="0.5" value="2.5" class="w-full accent-emerald-500 bg-slate-800 h-2 rounded cursor-pointer">
+          <div class="flex justify-between gap-1 mt-2">
+            <button id="btn-lock" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-[10px] font-bold rounded text-slate-300 flex-1">Lock</button>
+            <button id="btn-ideal" class="px-2 py-1 bg-emerald-950 border border-emerald-700 text-emerald-400 text-[10px] font-bold rounded flex-1">2–3</button>
+            <button id="btn-fast" class="px-2 py-1 bg-amber-950 border border-amber-700 text-amber-400 text-[10px] font-bold rounded flex-1">Fast</button>
+            <button id="btn-dump" class="px-2 py-1 bg-rose-950 border border-rose-700 text-rose-400 text-[10px] font-bold rounded flex-1">Dump</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="lg:col-span-6 flex flex-col gap-4">
+      <div class="card-panel flex flex-col gap-3">
+        <div class="flex justify-between items-center">
+          <div>
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">Anatomical Brachial Site</h3>
+            <p class="text-[10px] text-slate-500">Real-time particle dynamics & pressure occlusion</p>
+          </div>
+          <button id="steth-toggle-btn" class="px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow">
+            <span>🎧</span> <span id="steth-btn-text">Place Stethoscope</span>
+          </button>
+        </div>
+
+        <div class="bg-slate-950 rounded-xl p-4 border border-slate-800 relative h-40 flex items-center justify-center overflow-hidden">
+          <div class="w-full h-24 bg-slate-900/80 rounded-full relative flex items-center justify-center border border-slate-800">
+            
+            <!-- CANVAS FOR PARTICLE FLUID DYNAMICS -->
+            <div id="artery-wrapper" class="w-[95%] h-16 relative">
+              <canvas id="artery-canvas" width="600" height="120"></canvas>
+            </div>
+
+          </div>
+          <div class="absolute left-1/3 w-28 h-28 bg-slate-800/90 border-2 border-slate-600 rounded-lg shadow-2xl flex flex-col items-center justify-center backdrop-blur-sm z-10">
+            <span class="text-[9px] font-bold text-slate-300 uppercase tracking-widest">CUFF / MANŞET</span>
+            <div class="w-12 h-1 bg-slate-600 mt-1 rounded"></div>
+            <div class="absolute -bottom-2 left-6 w-1.5 h-6 bg-slate-700"></div>
+            <div class="absolute -bottom-2 left-10 w-1.5 h-6 bg-slate-700"></div>
+          </div>
+          <div id="steth-target" class="absolute left-[65%] w-12 h-12 rounded-full border-2 border-dashed border-sky-400/40 bg-sky-500/10 hover:bg-sky-500/30 cursor-pointer flex items-center justify-center transition-all z-20">
+            <div id="steth-head" class="w-8 h-8 rounded-full bg-sky-400/20 border-2 border-sky-400 hidden flex items-center justify-center text-sm shadow-[0_0_10px_rgba(56,189,248,0.5)]">🎧</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-panel flex flex-col justify-between min-h-[160px]">
+        <div class="flex justify-between items-start mb-1">
+          <span class="text-[10px] font-bold text-rose-400 uppercase tracking-widest">Arterial Hemodynamics & Sound</span>
+          <span id="phase-badge" class="text-[10px] font-mono font-bold bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">SILENCE</span>
+        </div>
+        <div>
+          <h4 id="hemo-title" class="text-lg font-extrabold text-white">No Cuff Pressure</h4>
+          <p id="hemo-desc" class="text-xs text-slate-400 leading-relaxed mt-1">Inflate the cuff above anticipated systolic pressure to compress the brachial artery completely.</p>
+        </div>
+        <div class="mt-3 pt-3 border-t border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-slate-400 font-semibold">Korotkoff Audio:</span>
+            <div id="audio-wave-bar" class="flex items-center gap-0.5 h-4">
+              <div class="w-1 bg-slate-700 h-2 rounded transition-colors duration-75"></div>
+              <div class="w-1 bg-slate-700 h-3 rounded transition-colors duration-75"></div>
+              <div class="w-1 bg-slate-700 h-1 rounded transition-colors duration-75"></div>
+              <div class="w-1 bg-slate-700 h-4 rounded transition-colors duration-75"></div>
+            </div>
+          </div>
+          <span id="hr-display" class="text-xs font-mono font-bold text-slate-400">Heart Rate: 72 BPM</span>
+        </div>
+      </div>
+
+      <div id="presets-panel" class="card-panel transition-all">
+        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Clinical Case Presets</h3>
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+          <button id="preset-normal" class="p-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded text-left transition-all">
+            <div class="text-xs font-bold text-emerald-400">Normal</div>
+            <div class="text-[10px] font-mono text-slate-400">120 / 80 mmHg</div>
+          </button>
+          <button id="preset-preht" class="p-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded text-left transition-all">
+            <div class="text-xs font-bold text-amber-400">Prehypertension</div>
+            <div class="text-[10px] font-mono text-slate-400">135 / 85 mmHg</div>
+          </button>
+          <button id="preset-stage2" class="p-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded text-left transition-all">
+            <div class="text-xs font-bold text-rose-400">Stage 2 HT</div>
+            <div class="text-[10px] font-mono text-slate-400">155 / 95 mmHg</div>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let cuffPressure = 0;
+    let systolic = 120;
+    let diastolic = 80;
+    let heartRate = 72;
+    let bleedRate = 2.5;
+    let stethoscopeOn = false;
+    let audioEnabled = false;
+    let audioCtx = null;
+    let examActive = false;
+    let targetSystolic = 0;
+    let targetDiastolic = 0;
+    let mainLoopInterval = null;
+    let lastBeatTime = 0;
+
+    // FLUID DYNAMICS SYSTEM
+    const canvas = document.getElementById('artery-canvas');
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Flow states: 0=normal, 1=constricted(turbulent), 2=occluded
+    let flowState = 0; 
+    let currentPinch = 0; // 0 = no pinch, 1 = fully pinched shut
+    
+    class BloodCell {
+      constructor() {
+        this.reset();
+        this.x = Math.random() * width; // Initial random scatter
+      }
+      reset() {
+        this.x = -10;
+        this.y = (height * 0.1) + Math.random() * (height * 0.8);
+        this.vx = 2 + Math.random() * 1.5;
+        this.vy = (Math.random() - 0.5) * 0.5;
+        this.radius = 2 + Math.random() * 2.5;
+        this.color = Math.random() > 0.2 ? '#f43f5e' : '#fda4af'; // Mix of deep red and bright red
+      }
+      update() {
+        if (flowState === 2) {
+          // Occluded - cells barely drift
+          this.vx *= 0.95;
+          this.vy *= 0.95;
+        } else {
+          // Baseline flow
+          let targetVx = 2.5;
+          
+          // Calculate pinch center (Cuff is at x ~ 200 to 280)
+          const pinchCenterX = width * 0.4;
+          const distToPinch = this.x - pinchCenterX;
+          
+          if (flowState === 1) {
+            // CONSTRICTED: Speed up through the narrow section
+            if (this.x > pinchCenterX - 60 && this.x < pinchCenterX + 20) {
+               targetVx = 8.5; // Jet velocity increases
+               // Squeeze Y towards center
+               const centerY = height / 2;
+               this.vy += (centerY - this.y) * 0.05;
+            } 
+            // TURBULENCE: Immediately after the pinch
+            else if (this.x >= pinchCenterX + 20 && this.x < pinchCenterX + 180) {
+               targetVx = 3.5;
+               // Add chaotic swirls
+               this.vy += (Math.random() - 0.5) * 2.5;
+               this.vx += (Math.random() - 0.5) * 1.5;
+            } else {
+               // Recovering to normal flow
+               this.vy *= 0.9;
+            }
+          } else {
+             // Normal laminar flow, slowly kill vy
+             this.vy *= 0.95;
+          }
+          
+          // Smoothly adjust velocity
+          this.vx += (targetVx - this.vx) * 0.1;
+        }
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Keep inside bounds
+        const bounds = getArteryBounds(this.x);
+        if (this.y < bounds.top + this.radius) {
+          this.y = bounds.top + this.radius;
+          this.vy *= -0.5;
+        }
+        if (this.y > bounds.bottom - this.radius) {
+          this.y = bounds.bottom - this.radius;
+          this.vy *= -0.5;
+        }
+
+        // Loop back
+        if (this.x > width + 10) {
+          this.reset();
+        }
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+      }
+    }
+
+    const cells = Array.from({length: 250}, () => new BloodCell());
+
+    function getArteryBounds(x) {
+      const pinchCenterX = width * 0.4;
+      const spread = 70; 
+      // Gaussian curve for the wall pinch
+      const pinchEffect = currentPinch * Math.exp(-Math.pow(x - pinchCenterX, 2) / (2 * Math.pow(spread, 2)));
+      
+      const maxPinchPx = (height / 2) - 5; // Leave small gap even when fully occluded for visual
+      
+      return {
+        top: maxPinchPx * pinchEffect,
+        bottom: height - (maxPinchPx * pinchEffect)
+      };
+    }
+
+    function renderCanvas() {
+      // Clear background
+      ctx.fillStyle = '#4c0519'; // Deep artery interior
+      ctx.fillRect(0, 0, width, height);
+
+      // Draw Walls (The "Cylinder" outline)
+      ctx.fillStyle = '#111827'; // Exterior mask color (matches container)
+      
+      // Top wall mask
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      for(let x=0; x<=width; x+=10) {
+         ctx.lineTo(x, getArteryBounds(x).top);
+      }
+      ctx.lineTo(width, 0);
+      ctx.fill();
+
+      // Bottom wall mask
+      ctx.beginPath();
+      ctx.moveTo(0, height);
+      for(let x=0; x<=width; x+=10) {
+         ctx.lineTo(x, getArteryBounds(x).bottom);
+      }
+      ctx.lineTo(width, height);
+      ctx.fill();
+
+      // Wall borders
+      ctx.strokeStyle = '#e11d48';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      for(let x=0; x<=width; x+=5) ctx.lineTo(x, getArteryBounds(x).top);
+      ctx.stroke();
+      ctx.beginPath();
+      for(let x=0; x<=width; x+=5) ctx.lineTo(x, getArteryBounds(x).bottom);
+      ctx.stroke();
+
+      // Update and Draw Cells (rendered in all modes including Exam mode)
+      cells.forEach(cell => {
+        cell.update();
+        cell.draw();
+      });
+
+      requestAnimationFrame(renderCanvas);
+    }
+    
+    // Start Canvas Loop
+    renderCanvas();
+
+
+    // DOM LOGIC
+    function renderMercuryScale() {
+      const leftEl = document.getElementById('scale-left');
+      const rightEl = document.getElementById('scale-right');
+      let leftHtml = '', rightHtml = '';
+      for (let p = 300; p >= 0; p -= 20) {
+        leftHtml += `<div>${p}</div>`; rightHtml += `<div>${p}</div>`;
+      }
+      if (leftEl) leftEl.innerHTML = leftHtml;
+      if (rightEl) rightEl.innerHTML = rightHtml;
+    }
+
+    function updateMercuryColumn() {
+      const bar = document.getElementById('mercury-bar');
+      const pxHeight = Math.min(360, Math.max(0, (cuffPressure / 300) * 360));
+      if (bar) bar.style.height = `${pxHeight}px`;
+      const badge = document.getElementById('cuff-pressure-badge');
+      if (badge) badge.innerText = `Cuff: ${Math.round(cuffPressure)} mmHg`;
+    }
+
+    function pumpCuff() {
+      initAudio();
+      cuffPressure = Math.min(300, cuffPressure + 12);
+      updateMercuryColumn();
+      checkHemodynamics();
+    }
+
+    function updateValve(val) {
+      bleedRate = parseFloat(val);
+      const txt = document.getElementById('bleed-rate-text');
+      if (txt) txt.innerText = `${bleedRate.toFixed(1)} mmHg/s`;
+    }
+
+    function setValvePreset(val) {
+      bleedRate = val;
+      const slider = document.getElementById('valve-slider');
+      if (slider) slider.value = val;
+      updateValve(val);
+    }
+
+    function toggleStethoscope() {
+      stethoscopeOn = !stethoscopeOn;
+      const head = document.getElementById('steth-head');
+      const text = document.getElementById('steth-btn-text');
+
+      if (stethoscopeOn) {
+        if (head) head.classList.remove('hidden');
+        if (text) text.innerText = "Remove Stethoscope";
+      } else {
+        if (head) head.classList.add('hidden');
+        if (text) text.innerText = "Place Stethoscope";
+      }
+      checkHemodynamics();
+    }
+
+    function initAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    function toggleAudio() {
+      initAudio();
+      audioEnabled = !audioEnabled;
+      const icon = document.getElementById('audio-icon');
+      const text = document.getElementById('audio-text');
+      const btn = document.getElementById('audio-toggle');
+
+      if (audioEnabled) {
+        if (icon) icon.innerText = "🔊";
+        if (text) text.innerText = "Audio On";
+        if (btn) btn.classList.replace('bg-slate-800', 'bg-emerald-900');
+      } else {
+        if (icon) icon.innerText = "🔇";
+        if (text) text.innerText = "Audio Off";
+        if (btn) btn.classList.replace('bg-emerald-900', 'bg-slate-800');
+      }
+    }
+
+    function playKorotkoffSound(phase) {
+      if (!audioEnabled || !stethoscopeOn || !audioCtx) return;
+
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      if (phase === 1) {
+        osc.frequency.setValueAtTime(120, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.08);
+        gain.gain.setValueAtTime(0.7, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+      } else if (phase === 2) {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(90, now);
+        osc.frequency.linearRampToValueAtTime(50, now + 0.15);
+        gain.gain.setValueAtTime(0.5, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+      } else if (phase === 3) {
+        osc.frequency.setValueAtTime(140, now);
+        osc.frequency.exponentialRampToValueAtTime(35, now + 0.09);
+        gain.gain.setValueAtTime(0.9, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      } else if (phase === 4) {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(70, now);
+        osc.frequency.linearRampToValueAtTime(30, now + 0.12);
+        gain.gain.setValueAtTime(0.35, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+      }
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.16);
+
+      const waveBar = document.getElementById('audio-wave-bar');
+      if (waveBar) {
+        const bars = waveBar.children;
+        for(let b of bars) { b.classList.add('bg-rose-500'); }
+        setTimeout(() => {
+          for(let b of bars) { b.classList.remove('bg-rose-500'); }
+        }, 120);
+      }
+    }
+
+    function checkHemodynamics() {
+      const phaseBadge = document.getElementById('phase-badge');
+      const title = document.getElementById('hemo-title');
+      const desc = document.getElementById('hemo-desc');
+
+      let currentPhase = 0;
+      let tBadge = "", tTitle = "", tDesc = "", tColor = "";
+      
+      // Target pinch visual calculation
+      let targetVisualPinch = 0;
+
+      if (cuffPressure >= systolic + 5) {
+        flowState = 2; // Occluded
+        targetVisualPinch = 1.0; 
+        tBadge = "OCCLUDED";
+        tColor = "bg-slate-800 text-slate-400 border-slate-700";
+        tTitle = "Artery Pinched Shut";
+        tDesc = `Cuff pressure overcomes internal pressure. Vessel walls squeezed together.`;
+      } 
+      else if (cuffPressure < systolic + 5 && cuffPressure >= diastolic) {
+        flowState = 1; // Turbulent jet
+        // Pinch dynamically changes based on pressure ratio
+        const range = systolic - diastolic;
+        const currentRel = cuffPressure - diastolic;
+        targetVisualPinch = 0.4 + ((currentRel / range) * 0.5); 
+
+        if (currentRel > range * 0.75) { currentPhase = 1; tBadge = "PHASE I"; } 
+        else if (currentRel > range * 0.45) { currentPhase = 2; tBadge = "PHASE II"; } 
+        else if (currentRel > range * 0.20) { currentPhase = 3; tBadge = "PHASE III"; } 
+        else { currentPhase = 4; tBadge = "PHASE IV"; }
+        
+        tColor = "bg-rose-950 text-rose-400 border-rose-800";
+        tTitle = `Korotkoff Sounds (${tBadge})`;
+        tDesc = `Narrow gap causes high-velocity jet. Jet crashes into downstream blood, creating chaotic turbulent vortices.`;
+      } 
+      else if (cuffPressure < diastolic && cuffPressure > 10) {
+        flowState = 0; // Laminar restored
+        targetVisualPinch = (cuffPressure / diastolic) * 0.2; // Slight indent
+        tBadge = "PHASE V (SILENCE)";
+        tColor = "bg-emerald-950 text-emerald-400 border-emerald-800";
+        tTitle = "Laminar Flow Restored";
+        tDesc = `Cuff pressure too low to pinch the artery. Smooth, silent continuous flow.`;
+      } 
+      else {
+        flowState = 0; // Normal
+        targetVisualPinch = 0;
+        tBadge = "NO PRESSURE";
+        tColor = "bg-slate-800 text-slate-500 border-slate-700";
+        tTitle = "No Cuff Pressure";
+        tDesc = "Inflate cuff to compress the brachial artery.";
+      }
+
+      // Smoothly animate the physical pinch over time
+      currentPinch += (targetVisualPinch - currentPinch) * 0.15;
+
+      if (examActive) {
+        phaseBadge.innerText = "EXAM ACTIVE";
+        phaseBadge.className = "text-[10px] font-mono font-bold px-2 py-0.5 rounded border bg-indigo-950 text-indigo-400 border-indigo-800";
+        title.innerText = "Monitoring Hemodynamics...";
+        desc.innerText = "Observe mercury column and listen carefully. Phase descriptions hidden.";
+      } else {
+        phaseBadge.innerText = tBadge;
+        phaseBadge.className = `text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${tColor}`;
+        title.innerText = tTitle;
+        desc.innerText = tDesc;
+      }
+
+      return currentPhase;
+    }
+
+    function startMainLoop() {
+      if (mainLoopInterval) clearInterval(mainLoopInterval);
+
+      mainLoopInterval = setInterval(() => {
+        if (cuffPressure > 0 && bleedRate > 0) {
+          cuffPressure = Math.max(0, cuffPressure - (bleedRate * 0.05));
+          updateMercuryColumn();
+        }
+
+        const now = Date.now();
+        const beatIntervalMs = (60 / heartRate) * 1000;
+
+        if (now - lastBeatTime >= beatIntervalMs) {
+          lastBeatTime = now;
+          const phase = checkHemodynamics();
+
+          if (phase > 0) {
+            const wrap = document.getElementById('artery-wrapper');
+            if (wrap) {
+              wrap.classList.remove('pulse-flow');
+              void wrap.offsetWidth;
+              wrap.classList.add('pulse-flow');
+            }
+            // Temporarily widen the pinch to simulate the systolic surge pushing the walls apart
+            currentPinch = Math.max(0.1, currentPinch - 0.2);
+            playKorotkoffSound(phase);
+          }
+        } else {
+           checkHemodynamics(); // keep updating smooth pinch logic
+        }
+      }, 50);
+    }
+
+    function loadPreset(sys, dia, hr) {
+      if (examActive) return;
+      systolic = sys;
+      diastolic = dia;
+      heartRate = hr;
+      const hrDisp = document.getElementById('hr-display');
+      if (hrDisp) hrDisp.innerText = `Heart Rate: ${heartRate} BPM`;
+      checkHemodynamics();
+    }
+
+    function toggleExamMode() {
+      examActive = !examActive;
+      const banner = document.getElementById('exam-banner');
+      const btn = document.getElementById('exam-btn');
+      const presetsPanel = document.getElementById('presets-panel');
+
+      if (examActive) {
+        if (banner) banner.style.display = 'block';
+        if (presetsPanel) presetsPanel.style.display = 'none';
+        if (btn) {
+          btn.classList.replace('bg-indigo-600', 'bg-slate-700');
+          btn.innerHTML = '<span>❌</span> Exit Exam';
+        }
+        targetSystolic = Math.floor(Math.random() * (160 - 100 + 1)) + 100;
+        targetDiastolic = Math.floor(Math.random() * (targetSystolic - 30 - 60 + 1)) + 60;
+        systolic = targetSystolic;
+        diastolic = targetDiastolic;
+        heartRate = Math.floor(Math.random() * (90 - 60 + 1)) + 60;
+        document.getElementById('exam-feedback').innerText = "";
+        document.getElementById('input-sys').value = "";
+        document.getElementById('input-dia').value = "";
+      } else {
+        if (banner) banner.style.display = 'none';
+        if (presetsPanel) presetsPanel.style.display = 'block';
+        if (btn) {
+          btn.classList.replace('bg-slate-700', 'bg-indigo-600');
+          btn.innerHTML = '<span>📝</span> Clinical Assessment Exam';
+        }
+        loadPreset(120, 80, 72);
+      }
+      checkHemodynamics();
+    }
+
+    function submitExamAnswer() {
+      const userSys = parseInt(document.getElementById('input-sys').value);
+      const userDia = parseInt(document.getElementById('input-dia').value);
+      const feedback = document.getElementById('exam-feedback');
+
+      if (isNaN(userSys) || isNaN(userDia)) {
+        feedback.innerText = "Please enter both Systolic and Diastolic values.";
+        feedback.className = "text-xs font-bold text-rose-400 mt-1 min-h-[18px]";
+        return;
+      }
+
+      const sysDiff = Math.abs(userSys - targetSystolic);
+      const diaDiff = Math.abs(userDia - targetDiastolic);
+      const allowedMargin = 15;
+
+      if (sysDiff <= allowedMargin && diaDiff <= allowedMargin) {
+        feedback.innerText = `PASSED! Target: ${targetSystolic}/${targetDiastolic} mmHg. Your entry (${userSys}/${userDia}) is within the ±15 mmHg clinical tolerance.`;
+        feedback.className = "text-xs font-bold text-emerald-400 mt-1 min-h-[18px]";
+      } else {
+        feedback.innerText = `OUT OF RANGE. Target: ${targetSystolic}/${targetDiastolic} mmHg. Your entry (${userSys}/${userDia}) exceeded the ±15 mmHg variance margin. Try deflating slower (2–3 mmHg/s).`;
+        feedback.className = "text-xs font-bold text-rose-400 mt-1 min-h-[18px]";
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      renderMercuryScale();
+      updateMercuryColumn();
+      checkHemodynamics();
+      startMainLoop();
+
+      document.getElementById('exam-btn').addEventListener('click', toggleExamMode);
+      document.getElementById('audio-toggle').addEventListener('click', toggleAudio);
+      document.getElementById('pump-btn').addEventListener('click', pumpCuff);
+      document.getElementById('steth-toggle-btn').addEventListener('click', toggleStethoscope);
+      document.getElementById('steth-target').addEventListener('click', toggleStethoscope);
+      document.getElementById('submit-exam-btn').addEventListener('click', submitExamAnswer);
+
+      document.getElementById('valve-slider').addEventListener('input', (e) => updateValve(e.target.value));
+      document.getElementById('btn-lock').addEventListener('click', () => setValvePreset(0));
+      document.getElementById('btn-ideal').addEventListener('click', () => setValvePreset(2.5));
+      document.getElementById('btn-fast').addEventListener('click', () => setValvePreset(6));
+      document.getElementById('btn-dump').addEventListener('click', () => setValvePreset(20));
+
+      document.getElementById('preset-normal').addEventListener('click', () => loadPreset(120, 80, 72));
+      document.getElementById('preset-preht').addEventListener('click', () => loadPreset(135, 85, 76));
+      document.getElementById('preset-stage2').addEventListener('click', () => loadPreset(155, 95, 82));
+
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' && e.target.tagName !== 'INPUT') {
+          e.preventDefault();
+          pumpCuff();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+py -m PyInstaller --onefile --noconsole --add-data "html_content;html_content" --name="Circulation Simulation Suite" main.py

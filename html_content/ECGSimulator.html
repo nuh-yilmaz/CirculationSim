@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ECG & QRS Axis Clinical Engine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            cardiac: {
+              dark: '#080d1a',
+              card: '#111827',
+              border: '#1f293d',
+              accent: '#38bdf8'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
+    
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #070b14;
+      color: #f1f5f9;
+    }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0b1324; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      background: #1e293b;
+      height: 6px;
+      border-radius: 3px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #38bdf8;
+      cursor: pointer;
+      border: 2px solid #ffffff;
+    }
+    .avf-slider::-webkit-slider-thumb {
+      background: #22c55e !important;
+    }
+
+    /* Invisible HTML Overlay Drop Zones */
+    .html-drop-zone {
+      position: absolute;
+      width: 44px;
+      height: 44px;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      cursor: pointer;
+      z-index: 20;
+    }
+
+    /* Visual SVG styling updated via JS */
+    .svg-target-visual {
+      transition: all 0.2s ease;
+    }
+    .svg-target-visual.drag-over {
+      stroke: #38bdf8 !important;
+      stroke-width: 3 !important;
+      filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.8));
+    }
+
+    .electrode-badge {
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-drag: element;
+      transition: transform 0.1s ease;
+    }
+    .electrode-badge:active {
+      cursor: grabbing;
+      transform: scale(1.05);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between overflow-x-hidden">
+
+  <!-- HEADER NAVIGATION -->
+  <header class="bg-slate-900/90 border-b border-slate-800 backdrop-blur sticky top-0 z-50 px-4 py-3">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div class="flex items-center gap-2">
+        <div class="p-2 bg-sky-500/20 text-sky-400 rounded-xl border border-sky-500/30 text-xl">⚡</div>
+        <div>
+          <h1 class="font-extrabold text-lg text-white tracking-tight leading-tight">ECG & Axis Diagnostic Suite</h1>
+          <p class="text-xs text-slate-400">12-Lead Placement Test & QRS Axis Vector Engine</p>
+        </div>
+      </div>
+
+      <nav class="flex gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
+        <button id="tab-btn-1" onclick="switchTab(1)" class="px-4 py-2 rounded-lg bg-sky-500 text-slate-950 font-bold shadow transition flex items-center gap-1.5">
+          <span>📍</span> 1. 12-Lead ECG Exam
+        </button>
+        <button id="tab-btn-2" onclick="switchTab(2)" class="px-4 py-2 rounded-lg text-slate-300 hover:text-white transition flex items-center gap-1.5">
+          <span>📐</span> 2. QRS Axis Engine
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto w-full p-4 md:p-6 flex-grow">
+
+    <!-- MODULE 1: 12-LEAD ECG PLACEMENT EXAM -->
+    <section id="tab-content-1" class="tab-panel flex flex-col gap-6">
+      <div class="bg-slate-900/80 border border-slate-800 p-4 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 class="text-lg font-bold text-sky-400 flex items-center gap-2">
+            <span>📍 12-Lead ECG Electrode Placement Examination</span>
+          </h2>
+          <p class="text-xs text-slate-300 mt-1">
+            Drag electrodes directly onto the torso target zones, or click an electrode then click a zone.
+          </p>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="checkECGPlacement()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg shadow border border-emerald-400/30 transition flex items-center gap-1.5">
+            <span>✅</span> Check Placement
+          </button>
+          <button onclick="resetECGPlacement()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-lg border border-slate-700 transition">
+            🔄 Reset
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- TORSO TARGET AREA -->
+        <div class="lg:col-span-7 bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col items-center justify-center min-h-[460px]">
+          <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 w-full text-left">Patient Torso Target Area</h3>
+          
+          <div class="relative w-full max-w-[420px] aspect-[4/5] mx-auto">
+            
+            <!-- Background SVG (Visuals Only) -->
+            <svg viewBox="0 0 400 500" class="absolute inset-0 w-full h-full drop-shadow-2xl pointer-events-none z-0">
+              <path d="M 200,30 Q 230,30 240,60 L 290,85 Q 330,105 320,160 L 305,260 Q 300,310 310,400 L 260,470 L 230,470 L 220,360 Q 200,350 180,360 L 170,470 L 140,470 L 90,400 Q 100,310 95,260 L 80,160 Q 70,105 110,85 L 160,60 Q 170,30 200,30 Z" 
+                    fill="#1e293b" stroke="#334155" stroke-width="4" />
+              <path d="M 160,75 Q 185,85 200,85 Q 215,85 240,75" fill="none" stroke="#475569" stroke-width="3" stroke-linecap="round" />
+              <path d="M 200,88 L 200,185" fill="none" stroke="#475569" stroke-width="5" stroke-linecap="round" />
+              
+              <!-- Visual Target Circles -->
+              <circle id="target-RA" class="svg-target-visual" cx="110" cy="110" r="16" fill="rgba(255,255,255,0.05)" stroke="#ffffff" stroke-width="2" stroke-dasharray="4 3" />
+              <text id="label-RA" x="110" y="114" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="bold" font-family="JetBrains Mono"></text>
+
+              <circle id="target-LA" class="svg-target-visual" cx="290" cy="110" r="16" fill="rgba(255,255,255,0.05)" stroke="#ffffff" stroke-width="2" stroke-dasharray="4 3" />
+              <text id="label-LA" x="290" y="114" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="bold" font-family="JetBrains Mono"></text>
+
+              <circle id="target-RL" class="svg-target-visual" cx="120" cy="430" r="16" fill="rgba(255,255,255,0.05)" stroke="#ffffff" stroke-width="2" stroke-dasharray="4 3" />
+              <text id="label-RL" x="120" y="434" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="bold" font-family="JetBrains Mono"></text>
+
+              <circle id="target-LL" class="svg-target-visual" cx="280" cy="430" r="16" fill="rgba(255,255,255,0.05)" stroke="#ffffff" stroke-width="2" stroke-dasharray="4 3" />
+              <text id="label-LL" x="280" y="434" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="bold" font-family="JetBrains Mono"></text>
+
+              <circle id="target-C1" class="svg-target-visual" cx="180" cy="145" r="14" fill="rgba(255,255,255,0.05)" stroke="#ffffff" stroke-width="2" stroke-dasharray="4 3" />
+              <text id="label-C1" x="180" y="149" text-anchor="middle" fill="#ffffff" font-size="10" font-weight="bold" font-family="JetBrains Mono"></text>
+
+              <circle id="target-C2" class="svg-target-visual" cx="220" cy="145" r="14" fill="rgba(255,255,255,0.05)" stroke="#ffffff" stroke-width="2" stroke-dasharray="4 3" />
+              <text id="label-C2" x="220" y="149" text-anchor="middle" fill="#ffffff" font-size="10" font-weight="bold" font-family="JetBrains Mono"></text>
+
+              <circle id="target-C3" class="svg-target-visual" cx="230" cy="170" r="14" fill="rgba(255,255,255,0.05)" stroke="#ffffff" stroke-width="2" stroke-dasharray="4 3" />
+              <text id="label-C3" x="230" y="174" text-anchor="middle" fill="#ffffff" font-size="10" font-weight="bold" font-family="JetBrains Mono"></text>
+
+              <circle id="target-C4" class="svg-target-visual" cx="240" cy="195" r="14" fill="rgba(255,255,255,0.05)" stroke="#ffffff" stroke-width="2" stroke-dasharray="4 3" />
+              <text id="label-C4" x="240" y="199" text-anchor="middle" fill="#ffffff" font-size="10" font-weight="bold" font-family="JetBrains Mono"></text>
+
+              <circle id="target-C5" class="svg-target-visual" cx="265" cy="200" r="14" fill="rgba(255,255,255,0.05)" stroke="#ffffff" stroke-width="2" stroke-dasharray="4 3" />
+              <text id="label-C5" x="265" y="204" text-anchor="middle" fill="#ffffff" font-size="10" font-weight="bold" font-family="JetBrains Mono"></text>
+
+              <circle id="target-C6" class="svg-target-visual" cx="290" cy="200" r="14" fill="rgba(255,255,255,0.05)" stroke="#ffffff" stroke-width="2" stroke-dasharray="4 3" />
+              <text id="label-C6" x="290" y="204" text-anchor="middle" fill="#ffffff" font-size="10" font-weight="bold" font-family="JetBrains Mono"></text>
+            </svg>
+
+            <!-- Foreground HTML Drop Zones -->
+            <div class="html-drop-zone" style="left: 27.5%; top: 22%;" data-target="RA" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'RA')" onclick="selectTarget('RA')"></div>
+            <div class="html-drop-zone" style="left: 72.5%; top: 22%;" data-target="LA" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'LA')" onclick="selectTarget('LA')"></div>
+            <div class="html-drop-zone" style="left: 30%; top: 86%;" data-target="RL" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'RL')" onclick="selectTarget('RL')"></div>
+            <div class="html-drop-zone" style="left: 70%; top: 86%;" data-target="LL" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'LL')" onclick="selectTarget('LL')"></div>
+            <div class="html-drop-zone" style="left: 45%; top: 29%;" data-target="C1" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'C1')" onclick="selectTarget('C1')"></div>
+            <div class="html-drop-zone" style="left: 55%; top: 29%;" data-target="C2" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'C2')" onclick="selectTarget('C2')"></div>
+            <div class="html-drop-zone" style="left: 57.5%; top: 34%;" data-target="C3" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'C3')" onclick="selectTarget('C3')"></div>
+            <div class="html-drop-zone" style="left: 60%; top: 39%;" data-target="C4" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'C4')" onclick="selectTarget('C4')"></div>
+            <div class="html-drop-zone" style="left: 66.25%; top: 40%;" data-target="C5" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'C5')" onclick="selectTarget('C5')"></div>
+            <div class="html-drop-zone" style="left: 72.5%; top: 40%;" data-target="C6" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'C6')" onclick="selectTarget('C6')"></div>
+          </div>
+        </div>
+
+        <!-- TRAY & DIAGNOSTICS -->
+        <div class="lg:col-span-5 flex flex-col gap-4">
+          
+          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+            <h3 class="text-xs font-bold text-sky-400 uppercase tracking-wider mb-3">Electrode Tray</h3>
+            
+            <div class="flex flex-wrap gap-2.5 justify-start" id="electrode-tray">
+              <div id="el-R" draggable="true" ondragstart="handleDragStart(event, 'R')" onclick="selectElectrode('R')" class="electrode-badge px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-mono font-bold text-sm shadow flex items-center gap-2 border border-rose-400/40">
+                <span class="w-2.5 h-2.5 rounded-full bg-white"></span> R
+              </div>
+              <div id="el-L" draggable="true" ondragstart="handleDragStart(event, 'L')" onclick="selectElectrode('L')" class="electrode-badge px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg font-mono font-bold text-sm shadow flex items-center gap-2 border border-amber-300/40">
+                <span class="w-2.5 h-2.5 rounded-full bg-slate-900"></span> L
+              </div>
+              <div id="el-F" draggable="true" ondragstart="handleDragStart(event, 'F')" onclick="selectElectrode('F')" class="electrode-badge px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-mono font-bold text-sm shadow flex items-center gap-2 border border-emerald-400/40">
+                <span class="w-2.5 h-2.5 rounded-full bg-white"></span> F
+              </div>
+              <div id="el-N" draggable="true" ondragstart="handleDragStart(event, 'N')" onclick="selectElectrode('N')" class="electrode-badge px-3.5 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg font-mono font-bold text-sm shadow flex items-center gap-2 border border-slate-400/40">
+                <span class="w-2.5 h-2.5 rounded-full bg-white"></span> N
+              </div>
+
+              <div id="el-C1" draggable="true" ondragstart="handleDragStart(event, 'C1')" onclick="selectElectrode('C1')" class="electrode-badge px-3 py-2 bg-red-500 hover:bg-red-400 text-white rounded-lg font-mono font-bold text-xs shadow">C1</div>
+              <div id="el-C2" draggable="true" ondragstart="handleDragStart(event, 'C2')" onclick="selectElectrode('C2')" class="electrode-badge px-3 py-2 bg-yellow-400 hover:bg-yellow-300 text-slate-950 rounded-lg font-mono font-bold text-xs shadow">C2</div>
+              <div id="el-C3" draggable="true" ondragstart="handleDragStart(event, 'C3')" onclick="selectElectrode('C3')" class="electrode-badge px-3 py-2 bg-green-500 hover:bg-green-400 text-white rounded-lg font-mono font-bold text-xs shadow">C3</div>
+              <div id="el-C4" draggable="true" ondragstart="handleDragStart(event, 'C4')" onclick="selectElectrode('C4')" class="electrode-badge px-3 py-2 bg-amber-700 hover:bg-amber-600 text-white rounded-lg font-mono font-bold text-xs shadow">C4</div>
+              <div id="el-C5" draggable="true" ondragstart="handleDragStart(event, 'C5')" onclick="selectElectrode('C5')" class="electrode-badge px-3 py-2 bg-slate-950 hover:bg-slate-900 text-white rounded-lg font-mono font-bold text-xs shadow border border-slate-700">C5</div>
+              <div id="el-C6" draggable="true" ondragstart="handleDragStart(event, 'C6')" onclick="selectElectrode('C6')" class="electrode-badge px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-mono font-bold text-xs shadow">C6</div>
+            </div>
+
+            <div id="selected-el-status" class="mt-3 p-2 bg-slate-950/80 rounded border border-slate-800 text-xs text-sky-300 font-mono">
+              Selected: <span id="current-selected-label" class="font-bold text-white">None</span>
+            </div>
+          </div>
+
+          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 flex-grow flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-center mb-2">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Exam Results</h3>
+                <span id="ecg-score-badge" class="px-2.5 py-0.5 rounded text-xs font-mono font-bold bg-slate-800 text-slate-300">0 / 10 Placed</span>
+              </div>
+              <div id="ecg-feedback-list" class="space-y-1.5 text-xs text-slate-300 max-h-52 overflow-y-auto pr-1">
+                <p class="text-slate-500 italic">Drag electrodes onto all 10 target zones. Click "Check Placement" when ready.</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- MODULE 2: QRS AXIS VOLTAGE ENGINE -->
+    <section id="tab-content-2" class="tab-panel hidden flex-col gap-6">
+      <div class="bg-slate-900/80 border border-slate-800 p-4 rounded-xl border-l-4 border-sky-400">
+        <h2 class="text-sm font-bold text-sky-400 uppercase tracking-wider mb-1">Mean Electrical Axis & Voltage Calculation</h2>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          Set individual <strong>R</strong> and <strong>S</strong> wave values (-25 to +25) for Lead I and aVF. The engine calculates Net Amplitude (R + S), synthesizes the exact complex, and plots the resulting vector.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-5 flex flex-col gap-5">
+          <!-- Lead I -->
+          <div class="bg-slate-900/80 border border-slate-800 p-4 rounded-xl flex flex-col gap-3">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-sky-400"></span>
+                <h3 class="font-bold text-sm text-white">Lead I Complex</h3>
+              </div>
+              <div class="font-mono text-xs bg-sky-950 text-sky-300 border border-sky-800/80 px-2.5 py-0.5 rounded font-bold">
+                Net: <span id="lead1-net-mm">+10.0</span> mm
+              </div>
+            </div>
+
+            <div class="relative h-32 w-full bg-slate-950 rounded-lg overflow-hidden border border-slate-800">
+              <canvas id="canvas-lead1"></canvas>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 pt-1">
+              <div>
+                <div class="flex justify-between text-slate-300 mb-1 text-[11px]">
+                  <span>R-Wave</span> <span class="font-mono font-bold text-sky-400" id="l1-r-val">12</span>
+                </div>
+                <input type="range" id="l1-r-input" min="-25" max="25" value="12" step="1" oninput="updateAxisEngine()" class="w-full">
+              </div>
+              <div>
+                <div class="flex justify-between text-slate-300 mb-1 text-[11px]">
+                  <span>S-Wave</span> <span class="font-mono font-bold text-sky-400" id="l1-s-val">-2</span>
+                </div>
+                <input type="range" id="l1-s-input" min="-25" max="25" value="-2" step="1" oninput="updateAxisEngine()" class="w-full">
+              </div>
+            </div>
+          </div>
+
+          <!-- Lead aVF -->
+          <div class="bg-slate-900/80 border border-slate-800 p-4 rounded-xl flex flex-col gap-3">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
+                <h3 class="font-bold text-sm text-white">Lead aVF Complex</h3>
+              </div>
+              <div class="font-mono text-xs bg-emerald-950 text-emerald-300 border border-emerald-800/80 px-2.5 py-0.5 rounded font-bold">
+                Net: <span id="avf-net-mm">+12.0</span> mm
+              </div>
+            </div>
+
+            <div class="relative h-32 w-full bg-slate-950 rounded-lg overflow-hidden border border-slate-800">
+              <canvas id="canvas-avf"></canvas>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 pt-1">
+              <div>
+                <div class="flex justify-between text-slate-300 mb-1 text-[11px]">
+                  <span>R-Wave</span> <span class="font-mono font-bold text-emerald-400" id="avf-r-val">15</span>
+                </div>
+                <input type="range" id="avf-r-input" min="-25" max="25" value="15" step="1" oninput="updateAxisEngine()" class="w-full avf-slider">
+              </div>
+              <div>
+                <div class="flex justify-between text-slate-300 mb-1 text-[11px]">
+                  <span>S-Wave</span> <span class="font-mono font-bold text-emerald-400" id="avf-s-val">-3</span>
+                </div>
+                <input type="range" id="avf-s-input" min="-25" max="25" value="-3" step="1" oninput="updateAxisEngine()" class="w-full avf-slider">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="lg:col-span-7 flex flex-col gap-5">
+          <div class="bg-slate-900/80 border border-slate-800 p-4 rounded-xl flex flex-col gap-4">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-800 pb-2">
+              <h3 class="font-bold text-sm text-white flex items-center gap-2">
+                <span>📐 Vector Coordinates & Hexaxial Plot</span>
+              </h3>
+              <div class="flex gap-2">
+                <button id="btn-plot-cartesian" onclick="setPlotterMode('cartesian')" class="px-3 py-1 text-xs font-bold rounded bg-sky-500 text-slate-950 transition">
+                  Cartesian Grid
+                </button>
+                <button id="btn-plot-hexaxial" onclick="setPlotterMode('hexaxial')" class="px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-300 hover:bg-slate-700 transition">
+                  Hexaxial Circle
+                </button>
+              </div>
+            </div>
+
+            <div class="relative w-full h-80 bg-slate-950 rounded-lg overflow-hidden border border-slate-800">
+              <div id="view-cartesian" class="w-full h-full">
+                <canvas id="canvas-cartesian-grid"></canvas>
+              </div>
+              <div id="view-hexaxial" class="w-full h-full hidden">
+                <canvas id="canvas-hexaxial-circle"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-slate-900/80 border border-slate-800 p-4 rounded-xl flex flex-col gap-3">
+            <div class="flex justify-between items-center p-3 bg-slate-950 rounded-lg border border-slate-800">
+              <div>
+                <div class="text-[11px] text-slate-400 font-semibold uppercase">Calculated Axis Quadrant</div>
+                <div id="quadrant-title" class="text-lg font-extrabold text-emerald-400">Normal Axis</div>
+              </div>
+              <div class="text-right">
+                <div id="quadrant-angle" class="font-mono text-2xl font-black text-sky-400">+50°</div>
+              </div>
+            </div>
+
+            <div class="bg-slate-950 p-3 rounded-lg border border-slate-800/80 font-mono text-[11px] space-y-1.5">
+              <div class="text-amber-400 font-bold">Angle θ = arctan2( Net Y<sub>aVF</sub> , Net X<sub>Lead I</sub> )</div>
+              <div class="text-slate-300">
+                θ = arctan2( <span id="formula-avf-val" class="text-emerald-400">+12</span> , <span id="formula-l1-val" class="text-sky-400">+10</span> ) = <span id="formula-result-deg" class="text-amber-300 font-bold">+50°</span>
+              </div>
+            </div>
+            <div id="quadrant-clinical-notes" class="text-xs text-slate-300 leading-relaxed p-3 bg-slate-950/60 rounded-lg border border-slate-800"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    const appState = {
+      activeTab: 1,
+      ecgPlacement: { RA: null, LA: null, RL: null, LL: null, C1: null, C2: null, C3: null, C4: null, C5: null, C6: null },
+      selectedElectrode: null,
+      plotterMode: 'cartesian'
+    };
+
+    function switchTab(tabNum) {
+      appState.activeTab = tabNum;
+      for (let i = 1; i <= 2; i++) {
+        const btn = document.getElementById(`tab-btn-${i}`);
+        const content = document.getElementById(`tab-content-${i}`);
+        if (i === tabNum) {
+          btn.className = "px-4 py-2 rounded-lg bg-sky-500 text-slate-950 font-bold shadow transition flex items-center gap-1.5";
+          content.classList.remove('hidden'); content.classList.add('flex');
+        } else {
+          btn.className = "px-4 py-2 rounded-lg text-slate-300 hover:text-white transition flex items-center gap-1.5";
+          content.classList.add('hidden'); content.classList.remove('flex');
+        }
+      }
+      if (tabNum === 2) updateAxisEngine();
+    }
+
+    // --- MODULE 1 LOGIC (HTML DOM Drag & Drop) ---
+    const correctECGMap = { RA: 'R', LA: 'L', RL: 'N', LL: 'F', C1: 'C1', C2: 'C2', C3: 'C3', C4: 'C4', C5: 'C5', C6: 'C6' };
+    
+    function handleDragStart(e, elKey) { 
+      e.dataTransfer.setData('text', elKey); 
+      e.dataTransfer.effectAllowed = 'move';
+      selectElectrode(elKey); 
+    }
+    
+    function handleDragOver(e) { 
+      e.preventDefault(); 
+      e.dataTransfer.dropEffect = 'move';
+      const tKey = e.currentTarget.getAttribute('data-target');
+      if (tKey) {
+        document.getElementById(`target-${tKey}`)?.classList.add('drag-over');
+      }
+    }
+    
+    function handleDragLeave(e) { 
+      const tKey = e.currentTarget.getAttribute('data-target');
+      if (tKey) {
+        document.getElementById(`target-${tKey}`)?.classList.remove('drag-over');
+      }
+    }
+    
+    function handleDrop(e, tKey) { 
+      e.preventDefault(); 
+      document.getElementById(`target-${tKey}`)?.classList.remove('drag-over');
+      const k = e.dataTransfer.getData('text') || appState.selectedElectrode; 
+      if(k) assignElectrodeToTarget(k, tKey); 
+    }
+    
+    function selectElectrode(elKey) { 
+      appState.selectedElectrode = elKey; 
+      document.getElementById('current-selected-label').innerText = elKey; 
+      document.querySelectorAll('.electrode-badge').forEach(b => b.classList.remove('ring-2', 'ring-sky-400', 'scale-105')); 
+      document.getElementById(`el-${elKey}`)?.classList.add('ring-2', 'ring-sky-400', 'scale-105'); 
+    }
+    
+    function selectTarget(tKey) { 
+      if (appState.selectedElectrode) assignElectrodeToTarget(appState.selectedElectrode, tKey); 
+    }
+    
+    function assignElectrodeToTarget(elKey, tKey) { 
+      Object.keys(appState.ecgPlacement).forEach(k => { if (appState.ecgPlacement[k] === elKey) appState.ecgPlacement[k] = null; }); 
+      appState.ecgPlacement[tKey] = elKey; 
+      updateECGPlacementUI(); 
+    }
+    
+    function updateECGPlacementUI() { 
+      Object.keys(correctECGMap).forEach(k => { 
+        const c = document.getElementById(`target-${k}`); 
+        const l = document.getElementById(`label-${k}`); 
+        const p = appState.ecgPlacement[k]; 
+        if (p) { 
+          c.setAttribute('fill', 'rgba(56, 189, 248, 0.4)'); 
+          c.setAttribute('stroke', '#38bdf8'); 
+          c.setAttribute('stroke-dasharray', 'none'); 
+          l.textContent = p; 
+        } else { 
+          c.setAttribute('fill', 'rgba(255,255,255,0.05)'); 
+          c.setAttribute('stroke', '#ffffff'); 
+          c.setAttribute('stroke-dasharray', '4 3'); 
+          l.textContent = ''; 
+        } 
+      }); 
+    }
+    
+    function checkECGPlacement() { 
+      let s = 0; 
+      const f = document.getElementById('ecg-feedback-list'); 
+      f.innerHTML = ''; 
+      Object.keys(correctECGMap).forEach(k => { 
+        const c = correctECGMap[k], p = appState.ecgPlacement[k], cir = document.getElementById(`target-${k}`), i = document.createElement('div'); 
+        i.className = 'p-1.5 rounded flex justify-between items-center bg-slate-950 border border-slate-800'; 
+        if (p === c) { 
+          s++; cir.setAttribute('stroke', '#22c55e'); cir.setAttribute('stroke-width', '4'); cir.setAttribute('fill', 'rgba(34, 197, 94, 0.3)'); 
+          i.innerHTML = `<span><strong>Target ${k}:</strong> Correct</span> <span class="text-emerald-400 font-bold">✓</span>`; 
+        } else { 
+          cir.setAttribute('stroke', '#ef4444'); cir.setAttribute('stroke-width', '4'); cir.setAttribute('fill', 'rgba(239, 68, 68, 0.3)'); 
+          i.innerHTML = `<span><strong>Target ${k}:</strong> Incorrect</span> <span class="text-rose-400 font-bold">Need ${c}</span>`; 
+        } 
+        f.appendChild(i); 
+      }); 
+      const b = document.getElementById('ecg-score-badge'); 
+      b.innerText = `${s} / 10 Correct`; 
+      b.className = `px-2.5 py-0.5 rounded text-xs font-mono font-bold ${s === 10 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'}`; 
+    }
+    
+    function resetECGPlacement() { 
+      Object.keys(appState.ecgPlacement).forEach(k => appState.ecgPlacement[k] = null); 
+      appState.selectedElectrode = null; 
+      document.getElementById('current-selected-label').innerText = 'None'; 
+      document.getElementById('ecg-score-badge').innerText = '0 / 10 Placed'; 
+      document.getElementById('ecg-feedback-list').innerHTML = ''; 
+      document.querySelectorAll('.electrode-badge').forEach(b => b.classList.remove('ring-2', 'ring-sky-400', 'scale-105')); 
+      updateECGPlacementUI(); 
+    }
+
+    // --- MODULE 2 LOGIC (QRS Axis Engine) ---
+    function updateAxisEngine() {
+      const l1_r = parseInt(document.getElementById('l1-r-input').value);
+      const l1_s = parseInt(document.getElementById('l1-s-input').value);
+      const avf_r = parseInt(document.getElementById('avf-r-input').value);
+      const avf_s = parseInt(document.getElementById('avf-s-input').value);
+
+      document.getElementById('l1-r-val').innerText = (l1_r > 0 ? '+' : '') + l1_r;
+      document.getElementById('l1-s-val').innerText = (l1_s > 0 ? '+' : '') + l1_s;
+      document.getElementById('avf-r-val').innerText = (avf_r > 0 ? '+' : '') + avf_r;
+      document.getElementById('avf-s-val').innerText = (avf_s > 0 ? '+' : '') + avf_s;
+
+      const net1 = l1_r + l1_s;
+      const netAvf = avf_r + avf_s;
+
+      const angleRad = Math.atan2(netAvf, net1);
+      let angleDeg = Math.round(angleRad * (180 / Math.PI));
+      
+      const lead1_str = (net1 > 0 ? '+' : '') + net1;
+      const avf_str = (netAvf > 0 ? '+' : '') + netAvf;
+
+      document.getElementById('lead1-net-mm').innerText = lead1_str + '.0';
+      document.getElementById('avf-net-mm').innerText = avf_str + '.0';
+
+      document.getElementById('formula-avf-val').innerText = avf_str;
+      document.getElementById('formula-avf-val').className = netAvf < 0 ? 'text-rose-400' : 'text-emerald-400';
+      document.getElementById('formula-l1-val').innerText = lead1_str;
+      document.getElementById('formula-l1-val').className = net1 < 0 ? 'text-rose-400' : 'text-sky-400';
+      document.getElementById('formula-result-deg').innerText = (angleDeg > 0 ? '+' : '') + angleDeg + '°';
+      document.getElementById('quadrant-angle').innerText = (angleDeg > 0 ? '+' : '') + angleDeg + '°';
+
+      updateQuadrantDiagnosis(angleDeg);
+
+      renderEcgWaveform('canvas-lead1', l1_r, l1_s, '#38bdf8', 'Lead I');
+      renderEcgWaveform('canvas-avf', avf_r, avf_s, '#22c55e', 'Lead aVF');
+
+      renderVectorPlotters(net1, netAvf, angleDeg);
+    }
+
+    function setPlotterMode(mode) {
+      appState.plotterMode = mode;
+      const btnC = document.getElementById('btn-plot-cartesian');
+      const btnH = document.getElementById('btn-plot-hexaxial');
+      const vC = document.getElementById('view-cartesian');
+      const vH = document.getElementById('view-hexaxial');
+
+      if (mode === 'cartesian') {
+        btnC.className = "px-3 py-1 text-xs font-bold rounded bg-sky-500 text-slate-950 transition";
+        btnH.className = "px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-300 hover:bg-slate-700 transition";
+        vC.classList.remove('hidden'); vH.classList.add('hidden');
+      } else {
+        btnH.className = "px-3 py-1 text-xs font-bold rounded bg-sky-500 text-slate-950 transition";
+        btnC.className = "px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-300 hover:bg-slate-700 transition";
+        vH.classList.remove('hidden'); vC.classList.add('hidden');
+      }
+      updateAxisEngine();
+    }
+
+    function renderEcgWaveform(canvasId, rValue, sValue, traceColor, label) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+
+      const w = rect.width, h = rect.height, centerY = h / 2;
+      const maxAmplitude = 30; 
+      const mmToPx = (h * 0.45) / maxAmplitude;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = '#11090d'; ctx.fillRect(0, 0, w, h);
+
+      ctx.strokeStyle = '#3d1c24'; ctx.lineWidth = 0.5;
+      for (let x=0; x<w; x+=mmToPx) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+      for (let y=centerY; y<h; y+=mmToPx) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+      for (let y=centerY; y>0; y-=mmToPx) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+      ctx.strokeStyle = '#852b3e'; ctx.lineWidth = 1;
+      for (let x=0; x<w; x+=mmToPx*5) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+      for (let y=centerY; y<h; y+=mmToPx*5) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+      for (let y=centerY; y>0; y-=mmToPx*5) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+      ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(w, centerY); ctx.stroke(); ctx.setLineDash([]);
+
+      const cx = w / 2;
+      const rPx = rValue * mmToPx; 
+      const sPx = sValue * mmToPx; 
+
+      ctx.strokeStyle = traceColor;
+      ctx.lineWidth = 2.5;
+      ctx.lineJoin = 'round';
+      
+      ctx.beginPath();
+      ctx.moveTo(0, centerY);
+      ctx.lineTo(cx - 45, centerY);
+      ctx.quadraticCurveTo(cx - 35, centerY - 6, cx - 25, centerY); 
+      ctx.lineTo(cx - 15, centerY);
+      ctx.lineTo(cx - 7, centerY - rPx); 
+      ctx.lineTo(cx + 7, centerY - sPx); 
+      ctx.lineTo(cx + 18, centerY);      
+
+      ctx.quadraticCurveTo(cx + 38, centerY - 9, cx + 58, centerY); 
+      ctx.lineTo(w, centerY);
+      ctx.stroke();
+
+      ctx.fillStyle = '#94a3b8'; ctx.font = '10px Inter'; ctx.fillText(label, 8, 14);
+    }
+
+    function updateQuadrantDiagnosis(angle) {
+      const titleEl = document.getElementById('quadrant-title');
+      const notesEl = document.getElementById('quadrant-clinical-notes');
+
+      if (angle >= -30 && angle <= 90) {
+        titleEl.innerText = 'Normal Axis (-30° to +90°)';
+        titleEl.className = 'text-lg font-extrabold text-emerald-400';
+        notesEl.innerHTML = '<strong>Clinical Diagnosis: Normal Cardiac Axis.</strong> Normal depolarization vector downwards and to the left.';
+      } else if (angle < -30 && angle >= -90) {
+        titleEl.innerText = 'Left Axis Deviation (LAD) (-30° to -90°)';
+        titleEl.className = 'text-lg font-extrabold text-sky-400';
+        notesEl.innerHTML = '<strong>Clinical Diagnosis: Left Axis Deviation.</strong> Electrical vector shifted superiorly & leftward. <em>Causes:</em> LVH, LAFB, Inferior MI.';
+      } else if (angle > 90 || (angle < -150 && angle <= -180)) {
+        titleEl.innerText = 'Right Axis Deviation (RAD) (+90° to +180°)';
+        titleEl.className = 'text-lg font-extrabold text-amber-400';
+        notesEl.innerHTML = '<strong>Clinical Diagnosis: Right Axis Deviation.</strong> Vector shifted rightward. <em>Causes:</em> RVH, LPFB, Lateral MI, COPD.';
+      } else {
+        titleEl.innerText = 'Extreme Axis Deviation (-90° to -180°)';
+        titleEl.className = 'text-lg font-extrabold text-rose-400';
+        notesEl.innerHTML = '<strong>Clinical Diagnosis: Extreme Axis Deviation ("No Man\'s Land").</strong> Both Lead I & aVF are negative. <em>Causes:</em> VT, Severe Hyperkalemia, Emphysema.';
+      }
+    }
+
+    function renderVectorPlotters(netX, netY, angleDeg) {
+      const canvasC = document.getElementById('canvas-cartesian-grid');
+      if (canvasC) {
+        const ctx = canvasC.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvasC.parentElement.getBoundingClientRect();
+        canvasC.width = rect.width * dpr; canvasC.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+        const w = rect.width, h = rect.height, cx = w / 2, cy = h / 2;
+
+        ctx.clearRect(0, 0, w, h);
+        const scale = 3.5; 
+
+        ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
+        for (let x = 0; x < w; x += 20) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+        for (let y = 0; y < h; y += 20) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+        ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(20, cy); ctx.lineTo(w - 20, cy); ctx.stroke();
+        ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, 20); ctx.lineTo(cx, h - 20); ctx.stroke();
+
+        const targetX = cx + netX * scale; const targetY = cy - netY * scale; 
+
+        ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(targetX, cy); ctx.lineTo(targetX, targetY); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx, targetY); ctx.lineTo(targetX, targetY); ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3.5;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(targetX, targetY); ctx.stroke();
+
+        ctx.font = 'bold 10px Inter'; 
+        ctx.fillStyle = '#38bdf8'; ctx.fillText('+ Lead I (0°)', w - 85, cy - 8);
+        ctx.fillStyle = '#64748b'; ctx.fillText('- Lead I', 25, cy - 8);
+        ctx.fillStyle = '#22c55e'; ctx.fillText('+ Lead aVF (+90°)', cx + 10, h - 15); 
+        ctx.fillStyle = '#64748b'; ctx.fillText('- Lead aVF', cx + 10, 25);
+      }
+
+      const canvasH = document.getElementById('canvas-hexaxial-circle');
+      if (canvasH) {
+        const ctx = canvasH.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvasH.parentElement.getBoundingClientRect();
+        canvasH.width = rect.width * dpr; canvasH.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+        const w = rect.width, h = rect.height, cx = w / 2, cy = h / 2, r = Math.min(cx, cy) - 35;
+
+        ctx.clearRect(0, 0, w, h);
+
+        ctx.strokeStyle = '#334155'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.stroke();
+
+        const leads = [
+          { name: 'I', deg: 0, color: '#38bdf8' },
+          { name: 'II', deg: 60, color: '#94a3b8' },
+          { name: 'aVF', deg: 90, color: '#22c55e' },
+          { name: 'III', deg: 120, color: '#94a3b8' },
+          { name: 'aVR', deg: -150, color: '#94a3b8' },
+          { name: 'aVL', deg: -30, color: '#94a3b8' }
+        ];
+
+        leads.forEach(l => {
+          const rad = (l.deg * Math.PI) / 180;
+          const lx = cx + r * Math.cos(rad); const ly = cy + r * Math.sin(rad);
+          ctx.strokeStyle = l.color === '#94a3b8' ? '#1e293b' : l.color; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(cx - r * Math.cos(rad), cy - r * Math.sin(rad)); ctx.lineTo(lx, ly); ctx.stroke();
+          ctx.fillStyle = l.color; ctx.font = 'bold 10px JetBrains Mono';
+          ctx.fillText(l.name, cx + (r + 16) * Math.cos(rad) - 5, cy + (r + 16) * Math.sin(rad) + 3);
+        });
+
+        const rad = (angleDeg * Math.PI) / 180;
+        const mag = Math.min(Math.hypot(netX, netY) * 2.5, r - 5); 
+        const vx = cx + mag * Math.cos(rad); const vy = cy + mag * Math.sin(rad);
+
+        ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3.5;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(vx, vy); ctx.stroke();
+      }
+    }
+
+    window.addEventListener('load', () => switchTab(1));
+    window.addEventListener('resize', () => { if (appState.activeTab === 2) updateAxisEngine(); });
+  </script>
+</body>
+</html>

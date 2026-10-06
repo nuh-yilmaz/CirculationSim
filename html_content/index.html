@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Circulation Simulation Hub</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { display: flex; height: 100vh; background-color: #1a1d20; color: #fff; overflow: hidden; }
+    
+    /* Sidebar Styling */
+    #sidebar { width: 260px; background-color: #212529; display: flex; flex-direction: column; border-right: 1px solid #343a40; }
+    .header { padding: 20px 16px; font-size: 1.1rem; font-weight: bold; color: #0d6efd; border-bottom: 1px solid #343a40; }
+    .nav-links { display: flex; flex-direction: column; padding: 10px 0; }
+    .nav-button {
+      background: none; border: none; color: #adb5bd; text-align: left; padding: 14px 20px;
+      font-size: 0.95rem; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center;
+    }
+    .nav-button:hover { background-color: #2c3036; color: #fff; }
+    .nav-button.active { background-color: #0d6efd; color: #fff; font-weight: 600; }
+
+    /* Content Viewport */
+    #content-container { flex: 1; height: 100vh; background: #ffffff; }
+    iframe { width: 100%; height: 100%; border: none; }
+  </style>
+</head>
+<body>
+
+  <div id="sidebar">
+    <div class="header">Circulation Suite</div>
+    <div class="nav-links">
+      <button class="nav-button active" onclick="loadModule('ECGSimulator.html', this)">ECG Simulator</button>
+      <button class="nav-button" onclick="loadModule('Auscultation.html', this)">Auscultation</button>
+      <button class="nav-button" onclick="loadModule('Pulses.html', this)">Pulses</button>
+      <button class="nav-button" onclick="loadModule('TAMeasurement.html', this)">TA Measurement</button>
+      <button class="nav-button" onclick="loadModule('Wiggers Diagram.html', this)">Wiggers Diagram</button>
+    </div>
+  </div>
+
+  <div id="content-container">
+    <iframe id="moduleViewer" src="ECGSimulator.html"></iframe>
+  </div>
+
+  <script>
+    function loadModule(pageUrl, btnElement) {
+      document.getElementById('moduleViewer').src = pageUrl;
+      const buttons = document.querySelectorAll('.nav-button');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      btnElement.classList.add('active');
+    }
+  </script>
+</body>
+</html>

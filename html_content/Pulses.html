@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anatomical Pulse Assessment Simulator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; background-color: #090d16; color: #f1f5f9; user-select: none; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    .pulse-target-node {
+      fill: transparent;
+      stroke: transparent;
+      stroke-width: 3;
+      cursor: pointer;
+      pointer-events: all;
+      transition: fill 0.2s, stroke 0.2s;
+    }
+    .pulse-target-node:hover {
+      fill: rgba(56, 189, 248, 0.25);
+      stroke: rgba(56, 189, 248, 0.9);
+    }
+
+    #palpation-fingers {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #f43f5e, #9f1239);
+      border: 3px solid #fecdd3;
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.7), inset 0 2px 4px rgba(255,255,255,0.4);
+      position: absolute;
+      cursor: grab;
+      z-index: 50;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      transition: border-color 0.2s, box-shadow 0.2s, transform 0.1s;
+    }
+    #palpation-fingers:active { cursor: grabbing; transform: scale(1.08); }
+
+    #palpation-fingers.active-point {
+      border-color: #38bdf8;
+      box-shadow: 0 0 24px #38bdf8, inset 0 2px 4px rgba(255,255,255,0.6);
+    }
+    #palpation-fingers.quiz-correct {
+      border-color: #10b981;
+      box-shadow: 0 0 28px #10b981;
+    }
+    #palpation-fingers.quiz-wrong {
+      border-color: #f43f5e;
+      box-shadow: 0 0 28px #f43f5e;
+      animation: shake 0.4s ease-in-out;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-6px); }
+      75% { transform: translateX(6px); }
+    }
+
+    @keyframes pulse-throb {
+      0% { transform: scale(1); }
+      30% { transform: scale(1.22); }
+      100% { transform: scale(1); }
+    }
+    .beat-active { animation: pulse-throb 0.22s ease-out !important; }
+    .throb-indicator { transition: transform 0.05s ease-out, background-color 0.1s; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col overflow-x-hidden">
+
+  <!-- HEADER BAR -->
+  <header class="bg-slate-900/90 border-b border-slate-800 backdrop-blur sticky top-0 z-50 px-4 py-3">
+    <div class="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-4">
+      <div class="flex items-center gap-3">
+        <div class="p-2 bg-rose-500/20 text-rose-400 rounded-xl border border-rose-500/30 text-xl">👆</div>
+        <div>
+          <h1 class="font-extrabold text-lg text-white tracking-tight leading-tight">Anatomical Pulse Explorer</h1>
+          <p class="text-xs text-slate-400">Interactive Arterial Assessment Module</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <!-- Prominent Test Audio Button -->
+        <button id="test-audio-btn" onclick="testAudioSound()" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black rounded-lg transition-all flex items-center gap-1.5 shadow-lg border border-amber-300 active:scale-95">
+          🔊 TEST AUDIO NOW
+        </button>
+        <button id="exam-btn" onclick="toggleExamMode()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-lg">
+          <span>📝</span> Exam Mode
+        </button>
+        <button id="play-btn" onclick="togglePlay()" class="px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-lg">
+          <span id="play-icon">▶</span> <span id="play-text">Start Pulse</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- EXAM BANNER -->
+  <div id="exam-banner" class="hidden bg-indigo-950/90 border-b border-indigo-700/60 p-4 transition-all">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+      <div class="flex-1">
+        <div class="flex items-center gap-3 mb-1">
+          <span class="text-[10px] font-extrabold text-indigo-300 uppercase tracking-widest bg-indigo-900 px-2 py-0.5 rounded border border-indigo-700">Clinical Exam</span>
+          <span id="exam-progress" class="text-xs font-mono font-bold text-slate-300">Question 1/9</span>
+          <span id="exam-score" class="text-xs font-mono font-bold text-emerald-400">Score: 0</span>
+        </div>
+        <div id="exam-prompt" class="text-base font-semibold text-white">Loading prompt...</div>
+        <div id="exam-feedback" class="text-xs font-medium mt-1 min-h-[18px]"></div>
+      </div>
+    </div>
+  </div>
+
+  <main class="max-w-7xl mx-auto w-full p-4 md:p-6 flex-grow grid grid-cols-1 lg:grid-cols-12 gap-6">
+    
+    <!-- ANATOMICAL DIAGRAM CONTAINER -->
+    <div class="lg:col-span-6 bg-slate-900/80 border border-slate-800 rounded-xl p-6 flex flex-col items-center justify-center relative shadow-2xl overflow-hidden" id="body-container">
+      <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest absolute top-4 left-6 pointer-events-none z-10">Pulses Diagram</h2>
+      <p class="text-[10px] text-slate-500 absolute top-8 left-6 pointer-events-none z-10">Drag finger icon onto anatomical pulse sites.</p>
+
+      <!-- Draggable Touch Target -->
+      <div id="palpation-fingers" style="top: 20px; right: 20px;">👆</div>
+
+      <div class="w-full max-w-[420px] relative mt-4">
+        <svg id="body-svg" viewBox="0 0 500 1000" class="w-full h-auto select-none rounded-xl">
+          <image href="Pulse.png" x="0" y="0" width="500" height="1000" preserveAspectRatio="none" class="pointer-events-none" />
+
+          <!-- TARGET NODES -->
+          <circle cx="236" cy="155" r="22" class="pulse-target-node" />
+          <circle cx="264" cy="155" r="22" class="pulse-target-node" />
+          <circle cx="140" cy="240" r="25" class="pulse-target-node" />
+          <circle cx="360" cy="240" r="25" class="pulse-target-node" />
+          <circle cx="100" cy="380" r="25" class="pulse-target-node" />
+          <circle cx="395" cy="380" r="25" class="pulse-target-node" />
+          <circle cx="50" cy="475" r="12" class="pulse-target-node" />
+          <circle cx="450" cy="475" r="12" class="pulse-target-node" />
+          <circle cx="90" cy="495" r="12" class="pulse-target-node" />
+          <circle cx="410" cy="495" r="12" class="pulse-target-node" />
+          <circle cx="205" cy="515" r="26" class="pulse-target-node" />
+          <circle cx="295" cy="515" r="26" class="pulse-target-node" />
+          <circle cx="205" cy="715" r="25" class="pulse-target-node" />
+          <circle cx="295" cy="715" r="25" class="pulse-target-node" />
+          <circle cx="220" cy="920" r="18" class="pulse-target-node" />
+          <circle cx="280" cy="920" r="18" class="pulse-target-node" />
+          <circle cx="200" cy="960" r="12" class="pulse-target-node" />
+          <circle cx="300" cy="960" r="12" class="pulse-target-node" />
+        </svg>
+      </div>
+    </div>
+
+    <!-- CLINICAL READOUT & TACTILE SIMULATOR -->
+    <div class="lg:col-span-6 flex flex-col gap-4">
+      
+      <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-6 shadow-xl min-h-[210px] flex flex-col justify-between">
+        <div>
+          <div class="flex justify-between items-start mb-2">
+            <h3 class="text-[10px] font-bold text-rose-400 uppercase tracking-widest">Tactile Signal</h3>
+            <span id="site-strength" class="text-xs font-mono font-bold bg-slate-800 px-2.5 py-1 rounded text-slate-500">Signal: Off Patient</span>
+          </div>
+          <div id="active-point-title" class="text-2xl font-black text-slate-500 leading-tight mb-1">Off Patient</div>
+          <p id="active-point-location" class="text-xs text-sky-400 font-semibold mb-2"></p>
+          <p id="active-point-desc" class="text-xs text-slate-400 leading-relaxed">Drag the palpation fingers icon over the anatomical target nodes to assess arterial impulses.</p>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-xl">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-xs font-bold text-slate-300 uppercase tracking-wider">Heart Rate (BPM)</span>
+          <span id="bpm-display" class="font-mono text-base font-black text-rose-400">75 BPM</span>
+        </div>
+        <input type="range" id="bpm-slider" min="40" max="180" value="75" oninput="updateBPM(this.value)" class="!opacity-100 !relative !h-2 !bg-slate-800 rounded-lg accent-rose-500 cursor-pointer w-full">
+      </div>
+
+      <!-- Tactile Pulse Feel & Waveform -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 h-40">
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-xl flex flex-col items-center justify-center relative overflow-hidden">
+          <span class="text-[10px] font-bold text-slate-500 uppercase absolute top-3 left-3">Impulse Feel</span>
+          <div id="finger-pad" class="w-16 h-16 rounded-full bg-slate-800 border-2 border-slate-700 shadow-inner throb-indicator relative overflow-hidden flex items-center justify-center">
+            <div id="pulse-flash" class="absolute inset-0 opacity-0 transition-opacity duration-100 ease-out bg-rose-500"></div>
+            <span class="text-2xl relative z-10 opacity-70">👆</span>
+          </div>
+        </div>
+
+        <div class="col-span-2 bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-xl relative overflow-hidden flex flex-col justify-end">
+          <span class="text-[10px] font-bold text-slate-500 uppercase absolute top-3 left-3">Arterial Waveform (PPG)</span>
+          <div id="waveform-container" class="w-full h-16 border-b border-slate-700 relative overflow-hidden opacity-30 transition-opacity">
+            <svg class="w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 100" id="wave-svg">
+              <path id="wave-path" d="M0,80 L20,80 L25,20 L35,90 L45,80 L100,80" fill="none" stroke="#f43f5e" stroke-width="2.5" stroke-linejoin="round"></path>
+            </svg>
+            <div id="scan-line" class="absolute top-0 bottom-0 left-0 w-px bg-white/60 shadow-[0_0_8px_2px_#38bdf8] hidden"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const targetZones = {
+      carotid: {
+        id: "carotid",
+        title: "Carotid Artery",
+        location: "Anterior neck, medial to sternocleidomastoid muscle",
+        desc: "Assesses central perfusion. Easiest to palpate in emergencies (CPR). Never palpate bilaterally at the same time.",
+        strength: "Strong / Bounding (3+)",
+        r: 22,
+        points: [{x: 236, y: 155}, {x: 264, y: 155}]
+      },
+      axillary: {
+        id: "axillary",
+        title: "Axillary Artery",
+        location: "Deep within the axilla (armpit)",
+        desc: "Continuation of subclavian artery. Palpated deeply in the axilla.",
+        strength: "Moderate (2+)",
+        r: 25,
+        points: [{x: 140, y: 240}, {x: 360, y: 240}]
+      },
+      brachial: {
+        id: "brachial",
+        title: "Brachial Artery",
+        location: "Antecubital fossa, medial to biceps tendon",
+        desc: "Major vessel of upper extremity. Standard site for blood pressure auscultation.",
+        strength: "Normal (2+)",
+        r: 25,
+        points: [{x: 100, y: 380}, {x: 395, y: 380}]
+      },
+      radial: {
+        id: "radial",
+        title: "Radial Artery",
+        location: "Lateral aspect of wrist (thumb side)",
+        desc: "Most common site for routine adult pulse rate/rhythm assessment.",
+        strength: "Normal (2+)",
+        r: 12,
+        points: [{x: 50, y: 475}, {x: 450, y: 475}]
+      },
+      ulnar: {
+        id: "ulnar",
+        title: "Ulnar Artery",
+        location: "Medial aspect of wrist (pinky side)",
+        desc: "Deeper and harder to palpate than radial. Assessed primarily during Allen Test.",
+        strength: "Weak (1+)",
+        r: 12,
+        points: [{x: 90, y: 500}, {x: 410, y: 500}]
+      },
+      femoral: {
+        id: "femoral",
+        title: "Femoral Artery",
+        location: "Femoral triangle, inferior to inguinal ligament",
+        desc: "Major central artery for lower extremities. Used in emergencies/catheter access.",
+        strength: "Strong / Bounding (3+)",
+        r: 26,
+        points: [{x: 205, y: 515}, {x: 295, y: 515}]
+      },
+      popliteal: {
+        id: "popliteal",
+        title: "Popliteal Artery",
+        location: "Deep in the popliteal fossa (behind knee)",
+        desc: "Deep and often difficult to palpate. Requires flexing knee to relax hamstrings.",
+        strength: "Weak / Deep (1+)",
+        r: 25,
+        points: [{x: 205, y: 715}, {x: 295, y: 715}]
+      },
+      tibial: {
+        id: "tibial",
+        title: "Posterior Tibial Artery",
+        location: "Medial ankle, behind medial malleolus",
+        desc: "Key indicator of peripheral circulation to the foot.",
+        strength: "Normal (2+)",
+        r: 18,
+        points: [{x: 220, y: 920}, {x: 280, y: 920}]
+      },
+      pedis: {
+        id: "pedis",
+        title: "Dorsalis Pedis Artery",
+        location: "Dorsum of the foot, lateral to extensor hallucis longus",
+        desc: "Assessed to confirm distal lower extremity perfusion.",
+        strength: "Weak to Normal (1+ to 2+)",
+        r: 12,
+        points: [{x: 200, y: 960}, {x: 300, y: 960}]
+      }
+    };
+
+    let bpm = 75;
+    let isPlaying = false;
+    let beatInterval;
+    let audioCtx = null;
+
+    const fingers = document.getElementById('palpation-fingers');
+    const svgEl = document.getElementById('body-svg');
+    let isDragging = false;
+    let dragStartX = 0, dragStartY = 0;
+    let elmStartX = 0, elmStartY = 0;
+    
+    let activeZone = null;
+    let scanLineAnim;
+
+    let examActive = false;
+    let examQuestions = [];
+    let currentQuestionIndex = 0;
+    let examScore = 0;
+
+    // Guaranteed AudioContext Unlocker for web browsers
+    function getAudioCtx() {
+      if (!audioCtx) {
+        const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtxClass) {
+          audioCtx = new AudioCtxClass();
+        }
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    // Automatically resume audio context on ANY user interaction
+    ['click', 'touchstart', 'mousedown', 'keydown'].forEach(eventType => {
+      window.addEventListener(eventType, () => { getAudioCtx(); }, { passive: true });
+    });
+
+    // Loud Test Beep
+    function testAudioSound() {
+      const ctx = getAudioCtx();
+      if (!ctx) return;
+
+      const t = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(520, t);
+      osc.frequency.exponentialRampToValueAtTime(260, t + 0.2);
+
+      gain.gain.setValueAtTime(0.01, t);
+      gain.gain.linearRampToValueAtTime(0.8, t + 0.03);
+      gain.gain.linearRampToValueAtTime(0.001, t + 0.2);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(t);
+      osc.stop(t + 0.22);
+    }
+
+    function playHeartbeatSound() {
+      const ctx = getAudioCtx();
+      if (!ctx || !activeZone) return;
+      
+      const t = ctx.currentTime;
+
+      let type = 'sawtooth';
+      let vol = 0.8;
+      let f1 = 400, f1_end = 180;
+      let f2 = 450, f2_end = 220;
+      let dur1 = 0.12, dur2 = 0.15;
+      let filterCutoff = 2000;
+
+      if (activeZone.strength.includes("3+")) {
+          // Bounding (Carotid/Femoral)
+          type = 'square';
+          vol = 0.5;
+          f1 = 300; f1_end = 140;
+          f2 = 350; f2_end = 180;
+      } else if (activeZone.id === 'popliteal') {
+          // Deep (Popliteal) - muffled
+          type = 'sawtooth';
+          vol = 1.0;
+          filterCutoff = 500;
+      } else if (activeZone.strength.includes("1+")) {
+          // Weak (Ulnar/Pedis)
+          type = 'triangle';
+          vol = 1.2;
+          f1 = 600; f1_end = 380;
+          f2 = 650; f2_end = 420;
+          dur1 = 0.08; dur2 = 0.10;
+      }
+
+      function createTone(startTime, startFreq, endFreq, duration) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const filter = ctx.createBiquadFilter();
+
+          osc.type = type;
+          osc.frequency.setValueAtTime(startFreq, startTime);
+          osc.frequency.linearRampToValueAtTime(endFreq, startTime + duration);
+
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(filterCutoff, startTime);
+
+          gain.gain.setValueAtTime(0.001, startTime);
+          gain.gain.linearRampToValueAtTime(vol, startTime + 0.02);
+          gain.gain.linearRampToValueAtTime(0.001, startTime + duration);
+
+          osc.connect(filter);
+          filter.connect(gain);
+          gain.connect(ctx.destination);
+
+          osc.start(startTime);
+          osc.stop(startTime + duration + 0.05);
+      }
+
+      createTone(t, f1, f1_end, dur1);
+      createTone(t + 0.14, f2, f2_end, dur2);
+    }
+
+    function updateBPM(val) {
+      bpm = parseInt(val);
+      document.getElementById('bpm-display').innerText = `${bpm} BPM`;
+      if (isPlaying) {
+        stopPulse();
+        startPulse();
+      }
+    }
+
+    function togglePlay() {
+      getAudioCtx();
+      isPlaying = !isPlaying;
+      
+      const btn = document.getElementById('play-btn');
+      const icon = document.getElementById('play-icon');
+      const text = document.getElementById('play-text');
+      const scan = document.getElementById('scan-line');
+      
+      if (isPlaying) {
+        btn.classList.replace('bg-rose-600', 'bg-slate-700');
+        btn.classList.replace('hover:bg-rose-500', 'hover:bg-slate-600');
+        icon.innerText = '■';
+        text.innerText = 'Stop Pulse';
+        if (activeZone) {
+            scan.style.display = 'block';
+            document.getElementById('waveform-container').classList.remove('opacity-30');
+        }
+        startPulse();
+      } else {
+        btn.classList.replace('bg-slate-700', 'bg-rose-600');
+        btn.classList.replace('hover:bg-slate-600', 'hover:bg-rose-500');
+        icon.innerText = '▶';
+        text.innerText = 'Start Pulse';
+        scan.style.display = 'none';
+        document.getElementById('waveform-container').classList.add('opacity-30');
+        stopPulse();
+      }
+    }
+
+    function startPulse() {
+      const msPerBeat = (60 / bpm) * 1000;
+      triggerBeat();
+      beatInterval = setInterval(triggerBeat, msPerBeat);
+      if(activeZone) animateScanner(msPerBeat);
+    }
+
+    function stopPulse() {
+      clearInterval(beatInterval);
+      if(scanLineAnim) scanLineAnim.cancel();
+      document.getElementById('finger-pad').classList.remove('beat-active');
+      document.getElementById('pulse-flash').style.opacity = "0";
+    }
+
+    function triggerBeat() {
+      if(!activeZone) return;
+      playHeartbeatSound();
+      
+      const pad = document.getElementById('finger-pad');
+      const flash = document.getElementById('pulse-flash');
+      
+      pad.classList.remove('beat-active');
+      void pad.offsetWidth; 
+      pad.classList.add('beat-active');
+      
+      flash.style.opacity = "0.5";
+      setTimeout(() => { flash.style.opacity = "0"; }, 150);
+    }
+    
+    function animateScanner(msPerBeat) {
+        if(scanLineAnim) scanLineAnim.cancel();
+        const scan = document.getElementById('scan-line');
+        scanLineAnim = scan.animate([
+            { left: '0%' },
+            { left: '100%' }
+        ], {
+            duration: msPerBeat,
+            iterations: Infinity
+        });
+    }
+
+    // Drag Interaction
+    fingers.addEventListener('mousedown', dragStart);
+    fingers.addEventListener('touchstart', dragStart, {passive: false});
+    window.addEventListener('mousemove', dragMove);
+    window.addEventListener('touchmove', dragMove, {passive: false});
+    window.addEventListener('mouseup', dragEnd);
+    window.addEventListener('touchend', dragEnd);
+
+    function dragStart(e) {
+      if(e.type === 'touchstart') e.preventDefault();
+      getAudioCtx();
+      isDragging = true;
+      const point = e.touches ? e.touches[0] : e;
+      dragStartX = point.clientX;
+      dragStartY = point.clientY;
+      elmStartX = fingers.offsetLeft;
+      elmStartY = fingers.offsetTop;
+      fingers.classList.remove('quiz-wrong', 'quiz-correct');
+    }
+
+    function dragMove(e) {
+      if (!isDragging) return;
+      if(e.type === 'touchmove') e.preventDefault();
+      
+      const point = e.touches ? e.touches[0] : e;
+      const dx = point.clientX - dragStartX;
+      const dy = point.clientY - dragStartY;
+      
+      const container = document.getElementById('body-container');
+      const newX = Math.min(Math.max(0, elmStartX + dx), container.clientWidth - fingers.clientWidth);
+      const newY = Math.min(Math.max(0, elmStartY + dy), container.clientHeight - fingers.clientHeight);
+      
+      fingers.style.left = newX + 'px';
+      fingers.style.top = newY + 'px';
+      
+      checkPlacement(point.clientX, point.clientY);
+    }
+
+    function dragEnd() {
+      if (!isDragging) return;
+      isDragging = false;
+      if (examActive && activeZone) evaluateAnswer(activeZone);
+    }
+
+    function checkPlacement(clientX, clientY) {
+        const rect = svgEl.getBoundingClientRect();
+        const scaleX = rect.width / 500;
+        const scaleY = rect.height / 1000;
+
+        const xInSvg = (clientX - rect.left) / scaleX;
+        const yInSvg = (clientY - rect.top) / scaleY;
+
+        let foundZone = null;
+
+        for (const key in targetZones) {
+            const z = targetZones[key];
+            const hitPadding = (z.id === 'radial' || z.id === 'ulnar') ? 10 : 18;
+            
+            for(const pt of z.points) {
+                const dist = Math.sqrt(Math.pow(xInSvg - pt.x, 2) + Math.pow(yInSvg - pt.y, 2));
+                if (dist <= z.r + hitPadding) {
+                    foundZone = z;
+                    break;
+                }
+            }
+            if(foundZone) break;
+        }
+
+        if (foundZone && activeZone?.id !== foundZone.id) {
+            setActiveZone(foundZone);
+        } else if (!foundZone && activeZone) {
+            clearActiveZone();
+        }
+    }
+
+    function setActiveZone(zone) {
+        activeZone = zone;
+        fingers.classList.add('active-point');
+        
+        document.getElementById('active-point-title').innerText = zone.title;
+        document.getElementById('active-point-title').className = "text-2xl font-black text-white leading-tight mb-1";
+        document.getElementById('active-point-location').innerText = `Location: ${zone.location}`;
+        document.getElementById('active-point-desc').innerText = zone.desc;
+        
+        const strEl = document.getElementById('site-strength');
+        strEl.innerText = `Signal: ${zone.strength}`;
+        strEl.className = "text-xs font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded";
+
+        if(isPlaying) {
+            document.getElementById('scan-line').style.display = 'block';
+            document.getElementById('waveform-container').classList.remove('opacity-30');
+            stopPulse();
+            startPulse(); 
+        }
+    }
+
+    function clearActiveZone() {
+        activeZone = null;
+        fingers.classList.remove('active-point');
+        
+        document.getElementById('active-point-title').innerText = "Off Patient";
+        document.getElementById('active-point-title').className = "text-2xl font-black text-slate-500 leading-tight mb-1";
+        document.getElementById('active-point-location').innerText = "";
+        document.getElementById('active-point-desc').innerText = "Drag the palpation fingers icon over the anatomical target nodes to assess arterial impulses.";
+        
+        const strEl = document.getElementById('site-strength');
+        strEl.innerText = `Signal: Off Patient`;
+        strEl.className = "text-xs font-mono font-bold bg-slate-800 px-2.5 py-1 rounded text-slate-500";
+
+        if(isPlaying) {
+            document.getElementById('scan-line').style.display = 'none';
+            document.getElementById('waveform-container').classList.add('opacity-30');
+        }
+    }
+
+    // Exam Mode
+    function toggleExamMode() {
+        examActive = !examActive;
+        const banner = document.getElementById('exam-banner');
+        const btn = document.getElementById('exam-btn');
+        
+        if (examActive) {
+            banner.classList.remove('hidden');
+            btn.classList.replace('bg-indigo-600', 'bg-slate-700');
+            btn.classList.replace('hover:bg-indigo-500', 'hover:bg-slate-600');
+            btn.innerHTML = '<span>❌</span> End Assessment';
+            startExam();
+        } else {
+            banner.classList.add('hidden');
+            btn.classList.replace('bg-slate-700', 'bg-indigo-600');
+            btn.classList.replace('hover:bg-slate-600', 'hover:bg-indigo-500');
+            btn.innerHTML = '<span>📝</span> Exam Mode';
+            fingers.classList.remove('quiz-wrong', 'quiz-correct');
+            document.getElementById('exam-feedback').innerText = "";
+        }
+    }
+
+    function startExam() {
+        examQuestions = [
+            { id: 'carotid', q: "Assess central perfusion for a patient in cardiac arrest." },
+            { id: 'radial', q: "Palpate the most common peripheral site to assess routine adult heart rate." },
+            { id: 'pedis', q: "Assess collateral circulation to the foot distal to a tibia fracture." },
+            { id: 'tibial', q: "Assess circulation behind the medial malleolus for peripheral artery disease evaluation." },
+            { id: 'femoral', q: "Locate the major central artery for the lower extremity, often used for cardiac catheterization." },
+            { id: 'brachial', q: "Where would you place a stethoscope to auscultate blood pressure in the arm?" },
+            { id: 'ulnar', q: "Perform an Allen Test by palpating the medial wrist artery." },
+            { id: 'popliteal', q: "Assess blood flow deep behind the knee." },
+            { id: 'axillary', q: "Palpate the continuation of the subclavian artery deep within the armpit." }
+        ];
+        
+        for (let i = examQuestions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [examQuestions[i], examQuestions[j]] = [examQuestions[j], examQuestions[i]];
+        }
+        
+        currentQuestionIndex = 0;
+        examScore = 0;
+        updateExamUI();
+    }
+
+    function updateExamUI() {
+        if(currentQuestionIndex >= examQuestions.length) {
+            document.getElementById('exam-prompt').innerText = `Assessment Complete! Final Score: ${examScore}/${examQuestions.length}`;
+            document.getElementById('exam-progress').innerText = "Finished";
+            return;
+        }
+        document.getElementById('exam-progress').innerText = `Question ${currentQuestionIndex + 1}/${examQuestions.length}`;
+        document.getElementById('exam-score').innerText = `Score: ${examScore}`;
+        document.getElementById('exam-prompt').innerText = `Task: ${examQuestions[currentQuestionIndex].q}`;
+        document.getElementById('exam-feedback').innerText = "";
+    }
+
+    function evaluateAnswer(zone) {
+        if (currentQuestionIndex >= examQuestions.length) return;
+        
+        const targetId = examQuestions[currentQuestionIndex].id;
+        const feedbackEl = document.getElementById('exam-feedback');
+        
+        fingers.classList.remove('quiz-wrong', 'quiz-correct');
+        void fingers.offsetWidth;
+        
+        if (zone.id === targetId) {
+            fingers.classList.add('quiz-correct');
+            feedbackEl.innerText = "Correct! You successfully located the " + zone.title + ".";
+            feedbackEl.className = "text-xs font-bold mt-1 min-h-[18px] text-emerald-400";
+            examScore++;
+            currentQuestionIndex++;
+            setTimeout(updateExamUI, 2000);
+        } else {
+            fingers.classList.add('quiz-wrong');
+            feedbackEl.innerText = `Incorrect. You palpated the ${zone.title}. Try again.`;
+            feedbackEl.className = "text-xs font-bold mt-1 min-h-[18px] text-rose-400";
+        }
+    }
+  </script>
+</body>
+</html>

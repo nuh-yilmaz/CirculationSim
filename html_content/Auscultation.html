@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auscultation Engine - Draggable</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; background-color: #070b14; color: #f1f5f9; user-select: none; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* Stethoscope Head Styles */
+    #stethoscope {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #475569, #0f172a);
+      border: 4px solid #cbd5e1;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), inset 0 2px 4px rgba(255,255,255,0.3);
+      position: absolute;
+      cursor: grab;
+      z-index: 50;
+      touch-action: none; /* Prevents scrolling while dragging on mobile */
+      transition: border-color 0.2s, box-shadow 0.2s, transform 0.1s;
+    }
+    #stethoscope:active { cursor: grabbing; }
+
+    /* Stethoscope States */
+    #stethoscope.active-point {
+      border-color: #38bdf8;
+      box-shadow: 0 0 15px #38bdf8, inset 0 2px 4px rgba(255,255,255,0.3);
+    }
+    #stethoscope.quiz-correct {
+      border-color: #10b981;
+      box-shadow: 0 0 20px #10b981;
+    }
+    #stethoscope.quiz-wrong {
+      border-color: #f43f5e;
+      box-shadow: 0 0 20px #f43f5e;
+      animation: shake 0.4s ease-in-out;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-6px); }
+      75% { transform: translateX(6px); }
+    }
+
+    @keyframes stethoscope-pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.15); }
+      100% { transform: scale(1); }
+    }
+    .active-beat { animation: stethoscope-pulse 0.15s ease-out !important; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col overflow-x-hidden">
+
+  <!-- HEADER -->
+  <header class="bg-slate-900/90 border-b border-slate-800 backdrop-blur sticky top-0 z-50 px-4 py-3">
+    <div class="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-4">
+      <div class="flex items-center gap-3">
+        <div class="p-2 bg-sky-500/20 text-sky-400 rounded-xl border border-sky-500/30 text-xl">🩺</div>
+        <div>
+          <h1 class="font-extrabold text-lg text-white tracking-tight leading-tight">Auscultation Engine</h1>
+          <p class="text-xs text-slate-400">Positional Acoustic Simulator</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="quiz-btn" onclick="toggleQuizMode()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5">
+          <span>📝</span> Start Assessment
+        </button>
+        <button id="play-btn" onclick="togglePlay()" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5">
+          <span id="play-icon">▶</span> <span id="play-text">Auto Play</span>
+        </button>
+        <button id="audio-toggle" onclick="toggleAudio()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-slate-700 transition-colors flex items-center gap-1.5">
+          <span>🔇</span> Sound Off
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- QUIZ BANNER -->
+  <div id="quiz-banner" class="hidden bg-indigo-900/80 border-b border-indigo-700 p-3 text-center transition-all">
+    <span class="text-xs font-bold text-indigo-300 uppercase tracking-widest block mb-1">Student Assessment Active</span>
+    <div id="quiz-prompt" class="text-lg font-bold text-white">Question goes here</div>
+    <div id="quiz-feedback" class="text-sm font-semibold mt-1 h-5"></div>
+  </div>
+
+  <main class="max-w-7xl mx-auto w-full p-4 md:p-6 flex-grow grid grid-cols-1 lg:grid-cols-12 gap-6">
+    
+    <!-- ANATOMY & DRAGGABLE STETHOSCOPE -->
+    <div class="lg:col-span-7 bg-slate-900/80 border border-slate-800 rounded-xl p-6 flex flex-col items-center justify-center relative shadow-2xl overflow-hidden" id="chest-container">
+      <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest absolute top-4 left-6 pointer-events-none">Anterior Chest Wall</h2>
+      <p class="text-[10px] text-slate-500 absolute top-8 left-6 pointer-events-none">Drag the stethoscope to auscultate.</p>
+
+      <!-- The Stethoscope Head -->
+      <div id="stethoscope" style="top: 20px; right: 20px;">
+        <div class="absolute inset-2 rounded-full border-2 border-slate-600 opacity-50"></div>
+      </div>
+
+      <div class="w-full max-w-md relative">
+        <svg id="chest-svg" viewBox="0 0 400 450" class="w-full h-auto pointer-events-none">
+          <!-- LANDMARKS: BONES & CARTILAGE -->
+          <g stroke="#334155" stroke-width="2" fill="none" stroke-linecap="round">
+            <!-- Clavicles -->
+            <path d="M 40,60 Q 110,40 170,80" />
+            <path d="M 360,60 Q 290,40 230,80" />
+            <!-- Sternum: Manubrium -->
+            <polygon points="170,80 230,80 215,140 185,140" fill="#1e293b" stroke="#475569" stroke-width="2"/>
+            <!-- Angle of Louis -->
+            <line x1="165" y1="140" x2="235" y2="140" stroke="#94a3b8" stroke-width="3" />
+            <text x="245" y="143" fill="#94a3b8" font-size="10" font-family="sans-serif">Angle of Louis</text>
+            <!-- Sternum: Body & Xiphoid -->
+            <polygon points="185,140 215,140 210,320 190,320" fill="#1e293b" stroke="#475569"/>
+            <polygon points="190,320 210,320 200,350" fill="#1e293b" stroke="#475569"/>
+            <!-- Patient Right Ribs -->
+            <path d="M 185,140 Q 120,130 50,170" /> 
+            <path d="M 187,185 Q 120,175 50,220" /> 
+            <path d="M 189,230 Q 120,220 50,270" /> 
+            <path d="M 191,275 Q 120,265 50,320" /> 
+            <!-- Patient Left Ribs -->
+            <path d="M 215,140 Q 280,130 350,170" /> 
+            <path d="M 213,185 Q 280,175 350,220" /> 
+            <path d="M 211,230 Q 280,220 350,270" /> 
+            <path d="M 209,275 Q 280,265 350,320" /> 
+            <path d="M 207,315 Q 280,315 350,370" /> 
+          </g>
+          <!-- VISIBLE CIRCLES REMOVED. Coordinate Map is handled in JS -->
+        </svg>
+      </div>
+    </div>
+
+    <!-- CLINICAL READOUT & CONTROLS -->
+    <div class="lg:col-span-5 flex flex-col gap-4">
+      
+      <!-- Stethoscope Status -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow-xl">
+        <h3 class="text-[10px] font-bold text-sky-400 uppercase tracking-widest mb-1">Acoustic Signal</h3>
+        <div id="active-point-title" class="text-xl font-black text-slate-500 leading-tight mb-2">Off Patient</div>
+        <p id="active-point-desc" class="text-xs text-slate-400 min-h-[40px]">Drag the stethoscope head to an intercostal space to hear localized valve sounds.</p>
+        
+        <div class="grid grid-cols-2 gap-3 mt-4">
+          <div class="bg-slate-950 border border-slate-800 p-3 rounded-lg flex flex-col items-center text-center">
+            <span class="text-[10px] text-slate-500 font-bold uppercase mb-1">S1 (Lub)</span>
+            <span id="s1-volume" class="text-sm font-bold text-slate-500">-</span>
+          </div>
+          <div class="bg-slate-950 border border-slate-800 p-3 rounded-lg flex flex-col items-center text-center">
+            <span class="text-[10px] text-slate-500 font-bold uppercase mb-1">S2 (Dub)</span>
+            <span id="s2-volume" class="text-sm font-bold text-slate-500">-</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-xl">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-xs font-bold text-slate-300 uppercase tracking-wider">Heart Rate (BPM)</span>
+          <span id="bpm-display" class="font-mono text-base font-black text-rose-400">75 BPM</span>
+        </div>
+        <input type="range" id="bpm-slider" min="40" max="180" value="75" oninput="updateBPM(this.value)" class="!opacity-100 !relative !h-2 !bg-slate-800 rounded-lg accent-rose-500 cursor-pointer w-full">
+      </div>
+
+      <!-- ECG Trace -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 h-32 relative overflow-hidden flex flex-col justify-between shadow-xl">
+        <span class="text-[10px] font-bold text-slate-500 uppercase z-10">Live ECG (Lead II)</span>
+        <svg id="live-ecg" viewBox="0 0 1000 100" class="absolute inset-0 w-full h-full pointer-events-none opacity-50" preserveAspectRatio="none">
+          <path id="ecg-path" d="M 0,50 L 1000,50" fill="none" stroke="#cbd5e1" stroke-width="2" />
+        </svg>
+        <div id="ecg-scrubber" class="absolute top-0 bottom-0 w-[2px] bg-rose-500 shadow-[0_0_8px_#f43f5e] z-10" style="left: 0%"></div>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    // --- STATE ---
+    let audioCtx;
+    let audioEnabled = false;
+    let isPlaying = false;
+    let currentBpm = 75;
+    let activePoint = null; 
+    let animationFrameId = null;
+    let lastTimestamp = null;
+    let currentProgress = 0; 
+    let lastPhaseName = "Diastole";
+
+    const stethEl = document.getElementById('stethoscope');
+    const svgEl = document.getElementById('chest-svg');
+    const containerEl = document.getElementById('chest-container');
+
+    // Invisible target zones on the SVG coordinate system (0 0 400 450)
+    // Radius of 30 allows slight margin of error for placing the bell
+    const targetZones = {
+      aortic: { x: 155, y: 155, r: 35, name: "Aortic Area", desc: "Right 2nd ICS. Best for hearing Aortic Valve closure.", s1Vol: "Very Faint", s2Vol: "Crisp" },
+      pulmonic: { x: 245, y: 155, r: 35, name: "Pulmonic Area", desc: "Left 2nd ICS. Best for hearing Pulmonic Valve closure.", s1Vol: "Faint", s2Vol: "Crisp" },
+      tricuspid: { x: 230, y: 295, r: 35, name: "Tricuspid Area", desc: "Left 4th/5th ICS lower sternal border.", s1Vol: "Loud & Deep", s2Vol: "Faint" },
+      mitral: { x: 295, y: 310, r: 35, name: "Mitral Area (Apex)", desc: "Left 5th ICS, midclavicular.", s1Vol: "Max Volume", s2Vol: "Heavily Muffled" }
+    };
+
+    // --- DRAG & DROP LOGIC ---
+    let isDragging = false;
+    
+    stethEl.addEventListener('pointerdown', (e) => {
+      isDragging = true;
+      stethEl.setPointerCapture(e.pointerId);
+      // Remove pulsing during drag
+      stethEl.classList.remove('active-beat');
+    });
+
+    stethEl.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+      
+      const containerRect = containerEl.getBoundingClientRect();
+      // Calculate boundaries to keep stethoscope inside the container
+      let newX = e.clientX - containerRect.left - (stethEl.offsetWidth / 2);
+      let newY = e.clientY - containerRect.top - (stethEl.offsetHeight / 2);
+      
+      newX = Math.max(0, Math.min(newX, containerRect.width - stethEl.offsetWidth));
+      newY = Math.max(0, Math.min(newY, containerRect.height - stethEl.offsetHeight));
+
+      stethEl.style.left = `${newX}px`;
+      stethEl.style.top = `${newY}px`;
+      stethEl.style.right = 'auto'; // Clear initial right binding
+    });
+
+    stethEl.addEventListener('pointerup', (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      stethEl.releasePointerCapture(e.pointerId);
+      
+      // Calculate where the center of the stethoscope is
+      const rect = stethEl.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+
+      checkPlacement(centerX, centerY);
+    });
+
+    function checkPlacement(screenX, screenY) {
+      // Map screen coordinates back to internal SVG coordinate space
+      const pt = svgEl.createSVGPoint();
+      pt.x = screenX;
+      pt.y = screenY;
+      const svgP = pt.matrixTransform(svgEl.getScreenCTM().inverse());
+      
+      let detectedPoint = null;
+
+      for (let [id, zone] of Object.entries(targetZones)) {
+        let dx = svgP.x - zone.x;
+        let dy = svgP.y - zone.y;
+        let distance = Math.sqrt(dx*dx + dy*dy);
+        
+        if (distance <= zone.r) {
+          detectedPoint = id;
+          break;
+        }
+      }
+
+      evaluatePlacement(detectedPoint);
+    }
+
+    // --- QUIZ & STATE LOGIC ---
+    let quizModeActive = false;
+    let currentQuizIndex = 0;
+    
+    const quizArray = [
+      { target: 'mitral', question: "Place stethoscope over the Mitral Area." },
+      { target: 'aortic', question: "Place stethoscope over the Aortic Area." },
+      { target: 'tricuspid', question: "Place stethoscope over the Tricuspid Area." },
+      { target: 'pulmonic', question: "Place stethoscope over the Pulmonic Area." }
+    ];
+
+    function toggleQuizMode() {
+      quizModeActive = !quizModeActive;
+      const banner = document.getElementById('quiz-banner');
+      const btn = document.getElementById('quiz-btn');
+      
+      if (quizModeActive) {
+        banner.classList.remove('hidden');
+        btn.innerHTML = "<span>🛑</span> Stop Assessment";
+        btn.className = "px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5";
+        
+        quizArray.sort(() => Math.random() - 0.5); // Randomize
+        currentQuizIndex = 0;
+        loadQuizQuestion();
+      } else {
+        banner.classList.add('hidden');
+        btn.innerHTML = "<span>📝</span> Start Assessment";
+        btn.className = "px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5";
+        stethEl.classList.remove('quiz-correct', 'quiz-wrong');
+      }
+    }
+
+    function loadQuizQuestion() {
+      if (currentQuizIndex >= quizArray.length) {
+        document.getElementById('quiz-prompt').innerText = "Assessment Complete! 🎉";
+        document.getElementById('quiz-feedback').innerText = "";
+        setTimeout(toggleQuizMode, 3000);
+        return;
+      }
+      document.getElementById('quiz-prompt').innerText = quizArray[currentQuizIndex].question;
+      document.getElementById('quiz-feedback').innerText = "";
+      stethEl.classList.remove('quiz-correct', 'quiz-wrong');
+    }
+
+    function evaluatePlacement(pointId) {
+      stethEl.classList.remove('active-point', 'quiz-correct', 'quiz-wrong');
+
+      if (quizModeActive && pointId) {
+        const expectedTarget = quizArray[currentQuizIndex].target;
+        const feedback = document.getElementById('quiz-feedback');
+        
+        if (pointId === expectedTarget) {
+          stethEl.classList.add('quiz-correct');
+          feedback.innerText = "Correct Location!";
+          feedback.className = "text-sm font-semibold mt-1 h-5 text-emerald-400";
+          currentQuizIndex++;
+          setTimeout(loadQuizQuestion, 1500);
+          activateAuscultation(pointId); 
+        } else {
+          stethEl.classList.add('quiz-wrong');
+          feedback.innerText = "Incorrect placement. Check landmarks.";
+          feedback.className = "text-sm font-semibold mt-1 h-5 text-rose-400";
+          deactivateAuscultation();
+        }
+      } else if (pointId) {
+        // Normal Mode Hit
+        activateAuscultation(pointId);
+      } else {
+        // Dropped outside any valid zone
+        deactivateAuscultation();
+      }
+    }
+
+    function activateAuscultation(pointId) {
+      stethEl.classList.add('active-point');
+      activePoint = pointId;
+      const data = targetZones[pointId];
+      
+      document.getElementById('active-point-title').innerText = data.name;
+      document.getElementById('active-point-title').classList.replace('text-slate-500', 'text-white');
+      document.getElementById('active-point-desc').innerText = data.desc;
+      
+      document.getElementById('s1-volume').innerText = data.s1Vol;
+      document.getElementById('s1-volume').classList.replace('text-slate-500', 'text-slate-300');
+      document.getElementById('s2-volume').innerText = data.s2Vol;
+      document.getElementById('s2-volume').classList.replace('text-slate-500', 'text-slate-300');
+
+      if (!audioEnabled) toggleAudio();
+      if (!isPlaying) togglePlay();
+    }
+
+    function deactivateAuscultation() {
+      activePoint = null;
+      document.getElementById('active-point-title').innerText = "Off Patient";
+      document.getElementById('active-point-title').classList.replace('text-white', 'text-slate-500');
+      document.getElementById('active-point-desc').innerText = "Drag the stethoscope head to an intercostal space.";
+      
+      document.getElementById('s1-volume').innerText = "-";
+      document.getElementById('s1-volume').classList.replace('text-slate-300', 'text-slate-500');
+      document.getElementById('s2-volume').innerText = "-";
+      document.getElementById('s2-volume').classList.replace('text-slate-300', 'text-slate-500');
+    }
+
+    // --- CORE ENGINE ---
+    function triggerVisualPulse() {
+      if (!activePoint) return;
+      stethEl.classList.remove('active-beat');
+      void stethEl.offsetWidth; 
+      stethEl.classList.add('active-beat');
+    }
+
+    function updateBPM(val) {
+      currentBpm = parseInt(val);
+      document.getElementById('bpm-display').innerText = `${currentBpm} BPM`;
+    }
+
+    function togglePlay() {
+      isPlaying = !isPlaying;
+      const playIcon = document.getElementById('play-icon');
+      const playText = document.getElementById('play-text');
+      const playBtn = document.getElementById('play-btn');
+
+      if (isPlaying) {
+        playIcon.innerText = "⏸"; playText.innerText = "Pause";
+        playBtn.className = "px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5";
+        lastTimestamp = performance.now();
+        animationFrameId = requestAnimationFrame(engineLoop);
+      } else {
+        playIcon.innerText = "▶"; playText.innerText = "Auto Play";
+        playBtn.className = "px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5";
+        if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      }
+    }
+
+    function toggleAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      
+      audioEnabled = !audioEnabled;
+      const btn = document.getElementById('audio-toggle');
+      if (audioEnabled) {
+        btn.innerHTML = '<span>🔊</span> Sound On';
+        btn.className = "px-3 py-1.5 bg-emerald-900/50 hover:bg-emerald-800/50 text-emerald-400 text-xs font-bold rounded-lg border border-emerald-800 transition-colors flex items-center gap-1.5";
+      } else {
+        btn.innerHTML = '<span>🔇</span> Sound Off';
+        btn.className = "px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-slate-700 transition-colors flex items-center gap-1.5";
+      }
+    }
+
+    function playHeartSound(type) {
+      if (!audioEnabled || !audioCtx || !activePoint) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      triggerVisualPulse();
+
+      const now = audioCtx.currentTime;
+      const pitchFactor = Math.min(1.4, Math.max(0.85, currentBpm / 75));
+
+      let s1VolMod = 1.0, s2VolMod = 1.0, s2FilterMod = 1.0;
+
+      if (activePoint === 'aortic') { s1VolMod = 0.2; s2VolMod = 1.2; s2FilterMod = 1.2; }
+      else if (activePoint === 'pulmonic') { s1VolMod = 0.3; s2VolMod = 1.1; s2FilterMod = 1.1; }
+      else if (activePoint === 'tricuspid') { s1VolMod = 2.4; s2VolMod = 0.4; s2FilterMod = 0.7; }
+      else if (activePoint === 'mitral') { s1VolMod = 3.0; s2VolMod = 0.2; s2FilterMod = 0.5; }
+
+      if (type === 'S1' && s1VolMod < 0.1) return;
+      if (type === 'S2' && s2VolMod < 0.1) return;
+
+      const compressor = audioCtx.createDynamicsCompressor();
+      compressor.threshold.setValueAtTime(-24, now);
+      compressor.ratio.setValueAtTime(12, now);
+      compressor.connect(audioCtx.destination);
+
+      const chestFilter = audioCtx.createBiquadFilter();
+      chestFilter.type = 'lowpass';
+      chestFilter.frequency.setValueAtTime(Math.max(380, 420 * pitchFactor), now);
+
+      const masterGain = audioCtx.createGain();
+      masterGain.connect(chestFilter);
+      chestFilter.connect(compressor);
+
+      if (type === 'S1') {
+        masterGain.gain.setValueAtTime(1.5 * s1VolMod, now); 
+        const osc = audioCtx.createOscillator();
+        const oscGain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150 * pitchFactor, now);
+        osc.frequency.exponentialRampToValueAtTime(45 * pitchFactor, now + 0.18);
+        oscGain.gain.setValueAtTime(0, now);
+        oscGain.gain.linearRampToValueAtTime(1.8, now + 0.015);
+        oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        osc.connect(oscGain);
+        oscGain.connect(masterGain);
+        osc.start(now); osc.stop(now + 0.22);
+      } else if (type === 'S2') {
+        masterGain.gain.setValueAtTime(1.5 * s2VolMod, now);
+        chestFilter.frequency.setValueAtTime(Math.max(380, 420 * pitchFactor * s2FilterMod), now); 
+        const osc = audioCtx.createOscillator();
+        const oscGain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(220 * pitchFactor, now);
+        osc.frequency.exponentialRampToValueAtTime(65 * pitchFactor, now + 0.12);
+        oscGain.gain.setValueAtTime(0, now);
+        oscGain.gain.linearRampToValueAtTime(1.5, now + 0.01);
+        oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+        osc.connect(oscGain);
+        oscGain.connect(masterGain);
+        osc.start(now); osc.stop(now + 0.15);
+      }
+    }
+
+    function engineLoop(timestamp) {
+      if (!isPlaying) return;
+      if (!lastTimestamp) lastTimestamp = timestamp;
+      const deltaTime = (timestamp - lastTimestamp) / 1000;
+      lastTimestamp = timestamp;
+
+      const cycleDuration = 60 / currentBpm;
+      const progressDelta = (deltaTime / cycleDuration) * 1000;
+      currentProgress = (currentProgress + progressDelta) % 1000;
+
+      document.getElementById('ecg-scrubber').style.left = `${(currentProgress / 1000) * 100}%`;
+      const t_systole_end = Math.round(1000 * (0.35 * Math.sqrt(60/currentBpm)) / cycleDuration);
+      
+      let currentPhase = "Diastole";
+      if (currentProgress > 80 && currentProgress < 130) currentPhase = "Isovolumetric Contraction";
+      else if (currentProgress >= 130 && currentProgress < t_systole_end) currentPhase = "Systole";
+      else if (currentProgress >= t_systole_end && currentProgress < t_systole_end + 60) currentPhase = "Isovolumetric Relaxation";
+
+      if (currentPhase !== lastPhaseName) {
+        if (currentPhase === "Isovolumetric Contraction") playHeartSound('S1');
+        if (currentPhase === "Isovolumetric Relaxation") playHeartSound('S2');
+        lastPhaseName = currentPhase;
+      }
+      animationFrameId = requestAnimationFrame(engineLoop);
+    }
+
+    window.onload = () => {
+      const ecg = `M 0,50 L 50,50 L 60,40 L 70,50 L 85,50 L 95,70 L 110,10 L 125,90 L 140,50 L 250,50 C 270,30 300,30 320,50 L 1000,50`;
+      document.getElementById('ecg-path').setAttribute('d', ecg);
+    };
+  </script>
+</body>
+</html>

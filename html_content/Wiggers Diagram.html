@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dynamic Wiggers Diagram Clinical Engine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            cardiac: { dark: '#080d1a', card: '#111827', border: '#1f293d' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
+    
+    body { font-family: 'Inter', sans-serif; background-color: #070b14; color: #f1f5f9; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0b1324; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+
+    input[type=range] {
+      -webkit-appearance: none; background: transparent; width: 100%; height: 40px;
+      cursor: pointer; z-index: 50; position: absolute; top: 0; left: 0; bottom: 0; right: 0; opacity: 0;
+    }
+    
+    .timeline-scrubber {
+      position: absolute; top: 0; bottom: 0; width: 2px; background-color: #38bdf8;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.8); pointer-events: none; z-index: 10;
+    }
+
+    .timeline-scrubber::after {
+      content: ''; position: absolute; top: -6px; left: -5px; width: 12px; height: 12px;
+      border-radius: 50%; background: #38bdf8; border: 2px solid #fff;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col overflow-x-hidden">
+
+  <!-- HEADER -->
+  <header class="bg-slate-900/90 border-b border-slate-800 backdrop-blur sticky top-0 z-50 px-4 py-3">
+    <div class="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-4">
+      <div class="flex items-center gap-3">
+        <div class="p-2 bg-fuchsia-500/20 text-fuchsia-400 rounded-xl border border-fuchsia-500/30 text-xl">🫀</div>
+        <div>
+          <h1 class="font-extrabold text-lg text-white tracking-tight leading-tight">Wiggers Diagram Engine</h1>
+          <p class="text-xs text-slate-400">Dynamic Heart Rate Scaling & Acoustic Auscultation</p>
+        </div>
+      </div>
+
+      <!-- CONTROLS HEADER -->
+      <div class="flex items-center gap-3">
+        <button id="play-btn" onclick="togglePlay()" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5">
+          <span id="play-icon">▶</span> <span id="play-text">Auto Play</span>
+        </button>
+
+        <button id="audio-toggle" onclick="toggleAudio()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-slate-700 transition-colors flex items-center gap-1.5">
+          <span>🔇</span> Sound Off
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto w-full p-4 md:p-6 flex-grow flex flex-col gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      
+      <!-- INTERACTIVE CHART AREA -->
+      <div class="lg:col-span-8 bg-slate-900/80 border border-slate-800 rounded-xl p-4 flex flex-col">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+            <span>📈 Real-Time Dynamic Cardiac Cycle</span>
+          </h2>
+          <div class="flex gap-3 text-[10px] font-bold uppercase tracking-wider">
+            <span class="text-rose-400 flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500"></span> Aortic</span>
+            <span class="text-sky-400 flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-sky-500"></span> LV Pres.</span>
+            <span class="text-fuchsia-400 flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-fuchsia-500"></span> LV Vol.</span>
+            <span class="text-slate-300 flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-400"></span> ECG</span>
+          </div>
+        </div>
+
+        <div class="relative w-full aspect-[4/3] bg-slate-950 rounded-lg border border-slate-800 overflow-hidden">
+          
+          <!-- DYNAMIC GRID LINES CONTAINER -->
+          <div id="grid-lines" class="absolute inset-0 pointer-events-none flex"></div>
+
+          <div class="absolute left-2 top-2 bottom-2 flex flex-col justify-between text-[9px] font-mono text-slate-500 pointer-events-none z-10 py-4">
+            <div>120 mmHg</div><div class="mt-16">80 mmHg</div><div class="mt-12">0 mmHg</div>
+            <div class="mt-8 text-fuchsia-500">130 mL</div><div class="mt-12 text-fuchsia-500">50 mL</div>
+            <div class="mt-12 text-slate-400">ECG</div><div class="mt-12 text-amber-500/70">Phono</div>
+          </div>
+
+          <!-- DYNAMIC SVG DIAGRAM -->
+          <svg id="wiggers-svg" viewBox="0 0 1000 1000" class="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none">
+            <path id="path-aortic" fill="none" stroke="#fb7185" stroke-width="4" stroke-linecap="round"/>
+            <path id="path-lv" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round"/>
+            <path id="path-atrial" fill="none" stroke="#34d399" stroke-width="2" stroke-dasharray="6 4"/>
+            <path id="path-volume" fill="none" stroke="#e879f9" stroke-width="4" stroke-linecap="round"/>
+            <path id="path-ecg" fill="none" stroke="#cbd5e1" stroke-width="3" stroke-linejoin="round"/>
+            <path id="path-phono" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linejoin="round"/>
+          </svg>
+
+          <div id="timeline-scrubber" class="timeline-scrubber" style="left: 0%;"></div>
+          <input type="range" id="time-slider" min="0" max="1000" value="0" oninput="userScrub(this.value)">
+        </div>
+
+        <div class="mt-4 flex justify-between text-xs text-slate-500 font-bold uppercase tracking-widest px-2">
+          <span id="systole-label">Systole (~35%)</span>
+          <span id="diastole-label">Diastole (~65%)</span>
+        </div>
+      </div>
+
+      <!-- CLINICAL READOUT & HEART RATE CONTROLS -->
+      <div class="lg:col-span-4 flex flex-col gap-4">
+        
+        <!-- HEART RATE CONTROL PANEL -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-xl">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-xs font-bold text-slate-300 uppercase tracking-wider">Heart Rate (BPM)</span>
+            <span id="bpm-display" class="font-mono text-base font-black text-rose-400">75 BPM</span>
+          </div>
+          <input type="range" id="bpm-slider" min="40" max="180" value="75" oninput="updateBPM(this.value)" class="!opacity-100 !relative !h-2 !bg-slate-800 rounded-lg accent-rose-500 cursor-pointer">
+          <div class="flex justify-between text-[10px] text-slate-500 font-bold mt-1">
+            <span>40 (Brady)</span>
+            <span>75 (Normal)</span>
+            <span>180 (Tachy)</span>
+          </div>
+          <p class="text-[10px] text-slate-400 mt-2 italic">Notice how increasing BPM shrinks the Diastasis phase on the diagram!</p>
+        </div>
+
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow-xl">
+          <h3 class="text-[10px] font-bold text-sky-400 uppercase tracking-widest mb-1">Current Cardiac Phase</h3>
+          <div id="phase-title" class="text-xl font-black text-white leading-tight mb-4">Atrial Systole</div>
+
+          <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+              <div class="bg-slate-950 border border-slate-800 p-3 rounded-lg flex flex-col items-center justify-center text-center">
+                <span class="text-[10px] text-slate-400 font-bold uppercase mb-1">Mitral Valve</span>
+                <span id="mitral-status" class="text-sm font-black text-emerald-400">OPEN</span>
+              </div>
+              <div class="bg-slate-950 border border-slate-800 p-3 rounded-lg flex flex-col items-center justify-center text-center">
+                <span class="text-[10px] text-slate-400 font-bold uppercase mb-1">Aortic Valve</span>
+                <span id="aortic-status" class="text-sm font-black text-rose-500">CLOSED</span>
+              </div>
+            </div>
+
+            <hr class="border-slate-800">
+
+            <div class="space-y-2">
+              <div class="flex justify-between items-center bg-slate-950 px-3 py-2 rounded border border-slate-800/60">
+                <span class="text-xs font-semibold text-slate-400">LV Pressure</span>
+                <span class="font-mono text-sm font-bold text-sky-400"><span id="lv-pressure-val">8</span> mmHg</span>
+              </div>
+              <div class="flex justify-between items-center bg-slate-950 px-3 py-2 rounded border border-slate-800/60">
+                <span class="text-xs font-semibold text-slate-400">Aortic Pressure</span>
+                <span class="font-mono text-sm font-bold text-rose-400"><span id="ao-pressure-val">80</span> mmHg</span>
+              </div>
+              <div class="flex justify-between items-center bg-slate-950 px-3 py-2 rounded border border-slate-800/60">
+                <span class="text-xs font-semibold text-slate-400">LV Volume</span>
+                <span class="font-mono text-sm font-bold text-fuchsia-400"><span id="lv-vol-val">120</span> mL</span>
+              </div>
+              <div class="flex justify-between items-center bg-slate-950 px-3 py-2 rounded border border-slate-800/60">
+                <span class="text-xs font-semibold text-slate-400">Heart Sound</span>
+                <span id="heart-sound-val" class="font-mono text-sm font-bold text-amber-400">None</span>
+              </div>
+            </div>
+
+            <div id="clinical-notes" class="mt-2 text-[11px] text-slate-400 leading-relaxed bg-sky-950/20 p-3 rounded-lg border border-sky-900/30">
+              The atria contract, pushing the final 20% of stroke volume into the ventricles (active filling).
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // --- GLOBAL STATE ---
+    let audioCtx;
+    let audioEnabled = false;
+    let isPlaying = false;
+    let currentBpm = 75;
+    let animationFrameId = null;
+    let lastTimestamp = null;
+    let currentProgress = 0; // 0 to 1000
+
+    // Dynamic Phase Points on 0-1000 scale
+    let phases = [];
+    let X = {}; // X-coordinates of phase boundaries
+
+    // --- ACOUSTIC STETHOSCOPE SYNTHESIZER ---
+    function makeDistortionCurve(amount) {
+      const k = amount;
+      const n_samples = 44100;
+      const curve = new Float32Array(n_samples);
+      const deg = Math.PI / 180;
+      for (let i = 0; i < n_samples; ++i) {
+        let x = (i * 2) / n_samples - 1;
+        curve[i] = ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
+      }
+      return curve;
+    }
+
+    function createNoiseNode(ctx, duration) {
+      const bufferSize = ctx.sampleRate * duration;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+      return noise;
+    }
+
+    function toggleAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      
+      audioEnabled = !audioEnabled;
+      const btn = document.getElementById('audio-toggle');
+      if (audioEnabled) {
+        btn.innerHTML = '<span>🔊</span> Sound On';
+        btn.className = "px-3 py-1.5 bg-emerald-900/50 hover:bg-emerald-800/50 text-emerald-400 text-xs font-bold rounded-lg border border-emerald-800 transition-colors flex items-center gap-1.5";
+      } else {
+        btn.innerHTML = '<span>🔇</span> Sound Off';
+        btn.className = "px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-slate-700 transition-colors flex items-center gap-1.5";
+      }
+    }
+
+    function playHeartSound(type) {
+      if (!audioEnabled || !audioCtx) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const now = audioCtx.currentTime;
+      
+      // Pitch/timing factor (kept within bounds so low BPM stays audible)
+      const pitchFactor = Math.min(1.4, Math.max(0.85, currentBpm / 75));
+
+      // Master Dynamics Compressor: Guarantees high volume and punch at any BPM without clipping
+      const compressor = audioCtx.createDynamicsCompressor();
+      compressor.threshold.setValueAtTime(-24, now);
+      compressor.knee.setValueAtTime(10, now);
+      compressor.ratio.setValueAtTime(12, now);
+      compressor.attack.setValueAtTime(0.003, now);
+      compressor.release.setValueAtTime(0.15, now);
+      compressor.connect(audioCtx.destination);
+
+      // Low-Pass Chest Filter: Clamped at 380 Hz minimum so laptop speakers can always output it
+      const chestFilter = audioCtx.createBiquadFilter();
+      chestFilter.type = 'lowpass';
+      chestFilter.frequency.setValueAtTime(Math.max(380, 420 * pitchFactor), now);
+      chestFilter.Q.value = 1.2;
+
+      // Soft distortion node for warm acoustic chest resonance
+      const distortion = audioCtx.createWaveShaper();
+      distortion.curve = makeDistortionCurve(15);
+
+      const masterGain = audioCtx.createGain();
+      masterGain.gain.setValueAtTime(2.2, now); // Boosted master gain
+
+      masterGain.connect(distortion);
+      distortion.connect(chestFilter);
+      chestFilter.connect(compressor);
+
+      if (type === 'S1') {
+        // "LUB" - Deep impact + Mitral snap
+        const osc = audioCtx.createOscillator();
+        const oscGain = audioCtx.createGain();
+        osc.type = 'triangle'; // Triangle wave produces speaker-friendly harmonics
+
+        osc.frequency.setValueAtTime(160 * pitchFactor, now);
+        osc.frequency.exponentialRampToValueAtTime(50 * pitchFactor, now + 0.18);
+
+        oscGain.gain.setValueAtTime(0, now);
+        oscGain.gain.linearRampToValueAtTime(1.8, now + 0.015);
+        oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+        // Mechanical valve closure snap
+        const noise = createNoiseNode(audioCtx, 0.04);
+        const noiseFilter = audioCtx.createBiquadFilter();
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.value = Math.max(300, 350 * pitchFactor);
+        noiseFilter.Q.value = 2.5;
+
+        const noiseGain = audioCtx.createGain();
+        noiseGain.gain.setValueAtTime(1.2, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+
+        noise.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(masterGain);
+
+        osc.connect(oscGain);
+        oscGain.connect(masterGain);
+
+        osc.start(now);
+        osc.stop(now + 0.22);
+        noise.start(now);
+        noise.stop(now + 0.05);
+
+      } else if (type === 'S2') {
+        // "DUB" - Crisper, sharper Aortic closure snap
+        const osc = audioCtx.createOscillator();
+        const oscGain = audioCtx.createGain();
+        osc.type = 'triangle';
+
+        osc.frequency.setValueAtTime(220 * pitchFactor, now);
+        osc.frequency.exponentialRampToValueAtTime(70 * pitchFactor, now + 0.12);
+
+        oscGain.gain.setValueAtTime(0, now);
+        oscGain.gain.linearRampToValueAtTime(1.5, now + 0.01);
+        oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+        // Mechanical valve closure snap
+        const noise = createNoiseNode(audioCtx, 0.03);
+        const noiseFilter = audioCtx.createBiquadFilter();
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.value = Math.max(450, 500 * pitchFactor);
+        noiseFilter.Q.value = 3.0;
+
+        const noiseGain = audioCtx.createGain();
+        noiseGain.gain.setValueAtTime(1.4, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+
+        noise.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(masterGain);
+
+        osc.connect(oscGain);
+        oscGain.connect(masterGain);
+
+        osc.start(now);
+        osc.stop(now + 0.15);
+        noise.start(now);
+        noise.stop(now + 0.04);
+      }
+    }
+
+    // --- PHYSIOLOGICAL TIMING ENGINE ---
+    function recalculatePhases(bpm) {
+      const totalCycleTime = 60 / bpm; // seconds
+      
+      // Bazett-like scaling for Systole: Systole = 0.3 * sqrt(60/BPM)
+      const systoleTime = 0.31 * Math.sqrt(60 / bpm);
+      const diastoleTime = Math.max(0.1, totalCycleTime - systoleTime);
+
+      // Breakdown of phase durations in seconds
+      const t_atrial = 0.08 * Math.sqrt(60 / bpm);
+      const t_isovol_c = 0.05;
+      const t_ejection = systoleTime - t_isovol_c - t_atrial;
+      const t_rapid_eject = t_ejection * 0.6;
+      const t_red_eject = t_ejection * 0.4;
+
+      const t_isovol_r = 0.06;
+      const t_rapid_fill = 0.12 * Math.sqrt(60 / bpm);
+      const t_diastasis = Math.max(0.01, diastoleTime - t_isovol_r - t_rapid_fill);
+
+      // Convert seconds to 0-1000 scale
+      const secToScale = 1000 / totalCycleTime;
+
+      X = {
+        atrial: Math.round(t_atrial * secToScale),
+        isovol_c: Math.round((t_atrial + t_isovol_c) * secToScale),
+        rapid_eject: Math.round((t_atrial + t_isovol_c + t_rapid_eject) * secToScale),
+        red_eject: Math.round((t_atrial + t_isovol_c + t_ejection) * secToScale),
+        isovol_r: Math.round((t_atrial + t_isovol_c + t_ejection + t_isovol_r) * secToScale),
+        rapid_fill: Math.round((t_atrial + t_isovol_c + t_ejection + t_isovol_r + t_rapid_fill) * secToScale),
+        end: 1000
+      };
+
+      // Systole vs Diastole percentages for UI label
+      const systolePct = Math.round((X.red_eject / 1000) * 100);
+      document.getElementById('systole-label').innerText = `Systole (~${systolePct}%)`;
+      document.getElementById('diastole-label').innerText = `Diastole (~${100 - systolePct}%)`;
+
+      phases = [
+        { end: X.atrial, name: "Atrial Systole", mitral: "OPEN", aortic: "CLOSED", mitralColor: "text-emerald-400", aorticColor: "text-rose-500", sound: "None", desc: "The atria contract, pushing the final stroke volume into the ventricles (active filling).", pAo: 80, pLv: 10, vol: 130 },
+        { end: X.isovol_c, name: "Isovolumetric Contraction", mitral: "CLOSED", aortic: "CLOSED", mitralColor: "text-rose-500", aorticColor: "text-rose-500", sound: "S1 (Lub)", desc: "Ventricles contract. Mitral valve slams shut (S1). Pressure rises rapidly without volume change.", pAo: 80, pLv: 80, vol: 130 },
+        { end: X.rapid_eject, name: "Rapid Ventricular Ejection", mitral: "CLOSED", aortic: "OPEN", mitralColor: "text-rose-500", aorticColor: "text-emerald-400", sound: "None", desc: "LV pressure exceeds Aortic pressure. Aortic valve opens. Blood is rapidly ejected.", pAo: 120, pLv: 120, vol: 60 },
+        { end: X.red_eject, name: "Reduced Ejection", mitral: "CLOSED", aortic: "OPEN", mitralColor: "text-rose-500", aorticColor: "text-emerald-400", sound: "None", desc: "Ventricular repolarization begins. Ejection rate slows down.", pAo: 100, pLv: 98, vol: 50 },
+        { end: X.isovol_r, name: "Isovolumetric Relaxation", mitral: "CLOSED", aortic: "CLOSED", mitralColor: "text-rose-500", aorticColor: "text-rose-500", sound: "S2 (Dub)", desc: "Ventricles relax. Aortic valve snaps shut (S2) creating the dicrotic notch.", pAo: 90, pLv: 10, vol: 50 },
+        { end: X.rapid_fill, name: "Rapid Ventricular Filling", mitral: "OPEN", aortic: "CLOSED", mitralColor: "text-emerald-400", aorticColor: "text-rose-500", sound: "None", desc: "LV pressure drops below Atrial pressure. Mitral valve opens. Blood passively rushes into LV.", pAo: 85, pLv: 5, vol: 110 },
+        { end: 1000, name: "Reduced Filling (Diastasis)", mitral: "OPEN", aortic: "CLOSED", mitralColor: "text-emerald-400", aorticColor: "text-rose-500", sound: "None", desc: "Pressures in atria and ventricles equalize. Passive filling slows down significantly.", pAo: 80, pLv: 5, vol: 120 }
+      ];
+
+      renderDynamicGrid();
+      redrawDynamicSVG();
+    }
+
+    // --- RENDER DYNAMIC GRID & SVG PATHS ---
+    function renderDynamicGrid() {
+      const container = document.getElementById('grid-lines');
+      const p = [X.atrial, X.isovol_c, X.rapid_eject, X.red_eject, X.isovol_r, X.rapid_fill];
+      
+      let html = `<div style="width: ${(p[0]/10)}%" class="h-full border-r border-slate-800/50 bg-white/5"></div>`;
+      html += `<div style="width: ${((p[1]-p[0])/10)}%" class="h-full border-r border-slate-700 border-dashed"></div>`;
+      html += `<div style="width: ${((p[2]-p[1])/10)}%" class="h-full border-r border-slate-800/50"></div>`;
+      html += `<div style="width: ${((p[3]-p[2])/10)}%" class="h-full border-r border-slate-700 border-dashed"></div>`;
+      html += `<div style="width: ${((p[4]-p[3])/10)}%" class="h-full border-r border-slate-800/50"></div>`;
+      html += `<div style="width: ${((p[5]-p[4])/10)}%" class="h-full border-r border-slate-800/50 bg-white/5"></div>`;
+      html += `<div style="width: ${((1000-p[5])/10)}%" class="h-full"></div>`;
+      
+      container.innerHTML = html;
+    }
+
+    function redrawDynamicSVG() {
+      // Dynamic SVG Path generators using calculated X boundaries
+      const ao = `M 0,280 C ${X.atrial*0.5},280 ${X.atrial},280 ${X.atrial},280 L ${X.isovol_c},280 C ${X.isovol_c+20},150 ${X.rapid_eject-20},100 ${X.rapid_eject},150 C ${X.rapid_eject+30},180 ${X.red_eject-10},280 ${X.red_eject},300 L ${X.red_eject},260 C ${X.red_eject+20},280 ${X.isovol_r},320 1000,450`;
+      
+      const lv = `M 0,480 C ${X.atrial*0.5},470 ${X.atrial},460 ${X.atrial},450 C ${X.atrial+10},430 ${X.isovol_c-10},150 ${X.isovol_c},150 C ${X.rapid_eject-20},150 ${X.rapid_eject},100 ${X.rapid_eject},150 C ${X.red_eject-20},180 ${X.red_eject},280 ${X.red_eject},300 C ${X.isovol_r},450 ${X.rapid_fill-20},490 ${X.rapid_fill},500 L 1000,500`;
+
+      const atrial = `M 0,480 C ${X.atrial*0.5},460 ${X.atrial},480 ${X.atrial},480 C ${X.isovol_c},480 ${X.rapid_eject},450 ${X.red_eject},480 C ${X.isovol_r},490 ${X.rapid_fill},500 1000,480`;
+
+      const vol = `M 0,550 C ${X.atrial*0.5},550 ${X.atrial},530 ${X.atrial},530 L ${X.isovol_c},530 C ${X.isovol_c+20},750 ${X.rapid_eject},800 ${X.rapid_eject},800 L ${X.red_eject},800 C ${X.isovol_r},800 ${X.rapid_fill-20},650 ${X.rapid_fill},600 C ${X.rapid_fill+50},570 900,560 1000,550`;
+
+      // Dynamic ECG Path
+      const ecg = `M 0,850 L ${Math.max(0, X.atrial-60)},850 C ${Math.max(0, X.atrial-45)},820 ${Math.max(0, X.atrial-25)},820 ${Math.max(0, X.atrial-10)},850 L ${X.atrial-5},850 L ${X.atrial},870 L ${X.atrial+10},750 L ${X.atrial+20},880 L ${X.atrial+30},850 L ${X.red_eject-50},850 C ${X.red_eject-20},820 ${X.red_eject+20},820 ${X.red_eject+50},850 L 1000,850`;
+
+      // Dynamic Phonocardiogram Path
+      const phono = `M 0,950 L ${X.atrial-5},950 L ${X.atrial},920 L ${X.atrial+5},970 L ${X.atrial+10},930 L ${X.atrial+15},960 L ${X.atrial+20},950 L ${X.red_eject-10},950 L ${X.red_eject-5},930 L ${X.red_eject},960 L ${X.red_eject+5},940 L ${X.red_eject+10},950 L 1000,950`;
+
+      document.getElementById('path-aortic').setAttribute('d', ao);
+      document.getElementById('path-lv').setAttribute('d', lv);
+      document.getElementById('path-atrial').setAttribute('d', atrial);
+      document.getElementById('path-volume').setAttribute('d', vol);
+      document.getElementById('path-ecg').setAttribute('d', ecg);
+      document.getElementById('path-phono').setAttribute('d', phono);
+    }
+
+    let lastPhaseName = "Atrial Systole";
+
+    function updateBPM(val) {
+      currentBpm = parseInt(val);
+      document.getElementById('bpm-display').innerText = `${currentBpm} BPM`;
+      recalculatePhases(currentBpm);
+      updateWiggersEngine(currentProgress);
+    }
+
+    function togglePlay() {
+      isPlaying = !isPlaying;
+      const playIcon = document.getElementById('play-icon');
+      const playText = document.getElementById('play-text');
+      const playBtn = document.getElementById('play-btn');
+
+      if (isPlaying) {
+        playIcon.innerText = "⏸";
+        playText.innerText = "Pause";
+        playBtn.className = "px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5";
+        lastTimestamp = performance.now();
+        animationFrameId = requestAnimationFrame(cardiacCycleLoop);
+      } else {
+        playIcon.innerText = "▶";
+        playText.innerText = "Auto Play";
+        playBtn.className = "px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5";
+        if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      }
+    }
+
+    function cardiacCycleLoop(timestamp) {
+      if (!isPlaying) return;
+      if (!lastTimestamp) lastTimestamp = timestamp;
+
+      const deltaTime = (timestamp - lastTimestamp) / 1000;
+      lastTimestamp = timestamp;
+
+      const cycleDuration = 60 / currentBpm;
+      const progressDelta = (deltaTime / cycleDuration) * 1000;
+
+      currentProgress = (currentProgress + progressDelta) % 1000;
+      document.getElementById('time-slider').value = currentProgress;
+      updateWiggersEngine(currentProgress);
+
+      animationFrameId = requestAnimationFrame(cardiacCycleLoop);
+    }
+
+    function userScrub(val) {
+      currentProgress = parseFloat(val);
+      updateWiggersEngine(currentProgress);
+    }
+
+    function updateWiggersEngine(val) {
+      const percentage = (val / 1000) * 100;
+      document.getElementById('timeline-scrubber').style.left = `${percentage}%`;
+
+      let currentPhase = phases[phases.length - 1];
+      for (let i = 0; i < phases.length; i++) {
+        if (val <= phases[i].end) {
+          currentPhase = phases[i];
+          break;
+        }
+      }
+
+      // Trigger Sounds ONLY on Phase Boundary Transitions
+      if (currentPhase.name !== lastPhaseName) {
+        if (currentPhase.name === "Isovolumetric Contraction") playHeartSound('S1');
+        if (currentPhase.name === "Isovolumetric Relaxation") playHeartSound('S2');
+        lastPhaseName = currentPhase.name;
+      }
+
+      // Dynamic Numeric Interpolations
+      let dynamicLvP = currentPhase.pLv, dynamicAoP = currentPhase.pAo, dynamicVol = currentPhase.vol;
+
+      if (currentPhase.name === "Isovolumetric Contraction") {
+        dynamicLvP = Math.floor(10 + ((val - X.atrial) / (X.isovol_c - X.atrial)) * 70);
+      } else if (currentPhase.name === "Rapid Ventricular Ejection") {
+        dynamicLvP = Math.floor(80 + ((val - X.isovol_c) / (X.rapid_eject - X.isovol_c)) * 40); dynamicAoP = dynamicLvP - 1; dynamicVol = Math.floor(130 - ((val - X.isovol_c) / (X.rapid_eject - X.isovol_c)) * 70);
+      } else if (currentPhase.name === "Reduced Ejection") {
+        dynamicLvP = Math.floor(120 - ((val - X.rapid_eject) / (X.red_eject - X.rapid_eject)) * 22); dynamicAoP = dynamicLvP + 2; dynamicVol = Math.floor(60 - ((val - X.rapid_eject) / (X.red_eject - X.rapid_eject)) * 10);
+      } else if (currentPhase.name === "Isovolumetric Relaxation") {
+        dynamicLvP = Math.floor(98 - ((val - X.red_eject) / (X.isovol_r - X.red_eject)) * 88); dynamicAoP = Math.floor(100 - ((val - X.red_eject) / (X.isovol_r - X.red_eject)) * 10);
+      } else if (currentPhase.name === "Rapid Ventricular Filling") {
+        dynamicLvP = 5; dynamicAoP = Math.floor(90 - ((val - X.isovol_r) / (X.rapid_fill - X.isovol_r)) * 5); dynamicVol = Math.floor(50 + ((val - X.isovol_r) / (X.rapid_fill - X.isovol_r)) * 60);
+      } else if (currentPhase.name === "Reduced Filling (Diastasis)") {
+        dynamicLvP = 5; dynamicAoP = Math.floor(85 - ((val - X.rapid_fill) / (1000 - X.rapid_fill)) * 5); dynamicVol = Math.floor(110 + ((val - X.rapid_fill) / (1000 - X.rapid_fill)) * 10);
+      } else if (currentPhase.name === "Atrial Systole") {
+        dynamicLvP = Math.floor(5 + (val / X.atrial) * 5); dynamicAoP = 80; dynamicVol = Math.floor(120 + (val / X.atrial) * 10);
+      }
+
+      // Update DOM Readouts
+      document.getElementById('phase-title').innerText = currentPhase.name;
+      const mitralEl = document.getElementById('mitral-status'); mitralEl.innerText = currentPhase.mitral; mitralEl.className = `text-sm font-black ${currentPhase.mitralColor}`;
+      const aorticEl = document.getElementById('aortic-status'); aorticEl.innerText = currentPhase.aortic; aorticEl.className = `text-sm font-black ${currentPhase.aorticColor}`;
+      document.getElementById('lv-pressure-val').innerText = dynamicLvP;
+      document.getElementById('ao-pressure-val').innerText = dynamicAoP;
+      document.getElementById('lv-vol-val').innerText = dynamicVol;
+      document.getElementById('heart-sound-val').innerText = currentPhase.sound;
+      document.getElementById('clinical-notes').innerText = currentPhase.desc;
+    }
+
+    window.onload = () => {
+      recalculatePhases(75);
+      updateWiggersEngine(0);
+    };
+  </script>
+</body>
+</html>
